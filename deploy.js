@@ -89,6 +89,16 @@ function safeExec(cmd, opts={}) {
   return execSync(cmd, { stdio:'inherit', ...opts });
 }
 
+// 静默执行命令，返回是否成功（用于存在性检测）
+function execOk(cmd, opts = {}) {
+  try {
+    execSync(cmd, { stdio: 'ignore', ...opts });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // 采用 shared-env.js 的读写与排序；旧 HTTPS 相关变量已废弃。
 
 async function main() {
@@ -237,7 +247,36 @@ async function main() {
       log('📋 未发现标准 Prisma 迁移文件，使用 db push 同步结构...', 'yellow');
       safeExec('npx prisma db push', { cwd: backendDir });
     }
-    
+
+    // ====== 迁移后关键表兜底检测 ======
+    // 背景：曾出现只有增量迁移目录而缺失“基线迁移”，导致核心业务表未创建而种子失败。
+    // 策略：在执行 migrate deploy 后，通过对关键表做一次 SELECT 1 探测；若缺失，自动执行一次 db push 补齐。
+    // 适用：SQLite / 未来 MySQL / PostgreSQL （SELECT 1 FROM <table> LIMIT 1 失败即视为缺失）
+    const skipFallbackFlag = getFlagOrEnv('skip-schema-fallback','DEPLOY_SKIP_SCHEMA_FALLBACK', false);
+    if (!/^(true|1|yes)$/i.test(String(skipFallbackFlag))) {
+      const criticalTables = ['factories','users','equipments'];
+      const missing = criticalTables.filter(t => !execOk(`npx prisma db execute --script "SELECT 1 FROM ${t} LIMIT 1;"`, { cwd: backendDir }));
+      if (missing.length > 0) {
+        log(`⚠️  迁移后检测到关键表缺失: ${missing.join(', ')}`, 'yellow');
+        log('⚠️  可能缺少基线迁移目录，执行兜底: prisma db push', 'yellow');
+        try {
+          safeExec('npx prisma db push', { cwd: backendDir });
+          const stillMissing = missing.filter(t => !execOk(`npx prisma db execute --script "SELECT 1 FROM ${t} LIMIT 1;"`, { cwd: backendDir }));
+          if (stillMissing.length === 0) {
+            log('✅  兜底 db push 已补齐关键表 (请后续补齐正式基线迁移)', 'green');
+          } else {
+            log(`❌  兜底后仍缺失: ${stillMissing.join(', ')} → 请手动检查 migrations/ 目录与 schema.prisma`, 'red');
+          }
+        } catch (fe) {
+          log('❌  兜底 db push 执行失败: ' + fe.message, 'red');
+        }
+      } else {
+        log('🔎  迁移后关键表检测通过 (factories/users/equipments 均存在)', 'gray');
+      }
+    } else {
+      log('⏭️  跳过关键表兜底检测 (已由参数禁用)', 'gray');
+    }
+
     log('✅ 数据库结构同步完成', 'green');
   } catch (e) {
     log('❌ 数据库初始化失败: ' + e.message, 'red');

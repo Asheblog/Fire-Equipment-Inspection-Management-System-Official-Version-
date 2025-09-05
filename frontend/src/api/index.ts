@@ -262,7 +262,8 @@ export const issueApi = {
   // 处理隐患
   handle: (id: number, data: {
     solution: string
-    fixedImageUrl: string
+    fixedImageUrl?: string // 兼容旧字段
+    fixedImageUrls?: string[] // 新多图
   }): Promise<ApiResponse<Issue>> =>
     api.put(`/issues/${id}/handle`, data),
     
