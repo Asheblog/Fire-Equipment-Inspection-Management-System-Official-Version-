@@ -9,6 +9,10 @@ const compression = require('compression');
 const morgan = require('morgan');
 require('dotenv').config();
 
+// 运行期文件日志（生产环境启用）
+const runtimeLogger = require('./src/utils/runtime.logger');
+runtimeLogger.init();
+
 // 安全模块导入
 const SecurityConfig = require('./src/security/security-config');
 const FileUploadSecurity = require('./src/security/file-upload');
@@ -29,8 +33,8 @@ const fileUpload = new FileUploadSecurity();
 // 响应压缩
 app.use(compression());
 
-// HTTP请求日志
-app.use(morgan('combined'));
+// HTTP请求日志（写入文件 + 控制台）
+app.use(morgan('combined', { stream: runtimeLogger.httpStream() }));
 
 // 解析JSON请求体
 app.use(express.json({ limit: '10mb' }));
@@ -59,6 +63,43 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // 主API路由 (包含认证、权限控制等完整功能)
 app.use('/api', apiRoutes);
+
+// 客户端日志上报接口 (生产环境使用)
+app.post('/client-logs', (req, res) => {
+  try {
+    const tokenEnv = process.env.CLIENT_LOG_TOKEN;
+    if (tokenEnv) {
+      const provided = req.header('x-log-token');
+      if (!provided || provided !== tokenEnv) {
+        return res.status(401).json({ success: false, message: 'log token invalid' });
+      }
+    }
+
+    const body = req.body || {};
+    if (!body.logs || !Array.isArray(body.logs)) {
+      return res.status(400).json({ success: false, message: 'logs array required' });
+    }
+
+    const MAX_BATCH = 100;
+    const allowedLevels = new Set(['info', 'warn', 'error', 'debug', 'log']);
+    let stored = 0;
+    for (const entry of body.logs.slice(0, MAX_BATCH)) {
+      if (!entry || typeof entry !== 'object') continue;
+      const level = allowedLevels.has(entry.level) ? entry.level : 'info';
+      let msg = entry.msg;
+      if (typeof msg !== 'string') {
+        msg = util.inspect(msg, { depth: 3 });
+      }
+      if (msg.length > 8000) msg = msg.slice(0, 8000) + ' [TRUNCATED]';
+      runtimeLogger.writeClient(level, msg, { url: entry.url, extra: entry.ts });
+      stored++;
+    }
+    return res.json({ success: true, stored });
+  } catch (e) {
+    console.error('客户端日志写入失败:', e);
+    return res.status(500).json({ success: false, message: 'internal error' });
+  }
+});
 
 // 系统状态路由 (独立于主API路由)
 app.get('/status', (req, res) => {
