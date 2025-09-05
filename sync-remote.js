@@ -35,7 +35,7 @@ function run(cmd, opts = {}) {
 
 function parseArgs() {
   const args = process.argv.slice(2);
-  const opts = { branch: 'master', hard: false, force: false, quiet: false, repo: 'https://github.com/Asheblog/Fire-Equipment-Inspection-Management-System.git', depth: 1 };
+  const opts = { branch: 'master', hard: false, force: false, quiet: false, repo: 'https://github.com/Asheblog/Fire-Equipment-Inspection-Management-System-Official-Version-.git', depth: 1 };
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '--branch' && args[i + 1]) { opts.branch = args[++i]; continue; }
