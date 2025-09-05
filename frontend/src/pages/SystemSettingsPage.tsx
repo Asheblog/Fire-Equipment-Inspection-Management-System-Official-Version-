@@ -47,6 +47,7 @@ export const SystemSettingsPage: React.FC = () => {
 
   const [isModified, setIsModified] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const [isLoadingSettings, setIsLoadingSettings] = useState(true)
 
   // 如果不是超级管理员，重定向到未授权页面
   if (!isSuperAdmin()) {
