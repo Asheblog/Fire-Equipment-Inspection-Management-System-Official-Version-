@@ -1,0 +1,14 @@
+{
+  // 顶层聚合 tsconfig：现在补充 baseUrl 与 paths 以便在仅引用此文件执行 tsc 时仍解析别名
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" }
+  ]
+}

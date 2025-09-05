@@ -1,0 +1,28 @@
+{
+  "name": "fire-safety-system",
+  "version": "1.0.0",
+  "description": "消防器材点检管理系统",
+  "scripts": {
+    "dev": "node dev.js",
+    "deploy": "node deploy.js",
+    "sync": "node sync-remote.js"
+  },
+  "keywords": [
+    "fire-safety",
+    "inspection",
+    "qr-code"
+  ],
+  "author": "Fire Safety Team",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@pimzino/spec-workflow-mcp": "^0.0.23",
+    "axios": "^1.11.0",
+    "exifreader": "^4.31.2",
+    "nodemon": "^3.1.10",
+    "selfsigned": "^2.4.1",
+    "xlsx": "^0.18.5"
+  }
+}

@@ -1,0 +1,469 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// 消防器材点检管理系统 - Prisma数据模型
+// 基于PRD文档设计，支持SQLite3初期部署和未来MySQL/PostgreSQL迁移
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// 系统设置键值表（轻量级运行时配置，如二维码基础URL）
+model SystemSetting {
+  id          Int      @id @default(autoincrement())
+  key         String   @unique
+  value       String?
+  description String?
+  updatedAt   DateTime @default(now()) @map("updated_at")
+
+  @@map("system_settings")
+}
+
+// 厂区表 - 存储厂区信息
+model Factory {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  address   String?
+  createdAt DateTime @default(now()) @map("created_at")
+  
+  // 关系定义
+  users      User[]
+  equipments Equipment[]
+  auditLogs  AuditLog[]
+  securityLogs SecurityLog[]
+  errorLogs  ErrorLog[]
+  
+  @@map("factories")
+}
+
+// 用户表 - 存储用户信息和权限 
+model User {
+  id           Int     @id @default(autoincrement())
+  username     String  @unique
+  passwordHash String  @map("password_hash")
+  fullName     String  @map("full_name")
+  role         String  @default("INSPECTOR") // SQLite兼容: INSPECTOR|FACTORY_ADMIN|SUPER_ADMIN
+  factoryId    Int     @map("factory_id")
+  isActive     Boolean @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  
+  // 关系定义
+  factory           Factory         @relation(fields: [factoryId], references: [id], onDelete: Cascade)
+  inspectionLogs    InspectionLog[]
+  reportedIssues    Issue[]         @relation("ReportedBy")
+  handledIssues     Issue[]         @relation("HandledBy")
+  auditedIssues     Issue[]         @relation("AuditedBy")
+  auditLogs         AuditLog[]
+  securityLogs      SecurityLog[]
+  errorLogs         ErrorLog[]
+  resolvedSecurityLogs SecurityLog[] @relation("SecurityLogResolver")
+  resolvedErrorLogs ErrorLog[]      @relation("ErrorLogResolver")
+  
+  // 权限系统相关关系
+  roles             UserRole[]      // 用户拥有的角色
+  userPermissions   UserPermission[] // 用户个人权限
+  permissionLogs    PermissionLog[] @relation("PermissionTarget")  // 作为权限变更目标
+  operatorLogs      PermissionLog[] @relation("PermissionOperator") // 作为权限操作者
+  tokenBlacklist    TokenBlacklist[] @relation("UserTokens") // 用户失效令牌
+  
+  // 索引优化 - 基于厂区和角色的查询优化
+  @@index([factoryId, role])
+  @@map("users")
+}
+
+// JWT令牌黑名单表 - 存储失效的JWT令牌
+model TokenBlacklist {
+  id        Int      @id @default(autoincrement())
+  token     String   @unique                        // JWT令牌（完整或部分哈希）
+  jti       String?  @unique                        // JWT ID（如果使用）
+  userId    Int      @map("user_id")                // 令牌所属用户ID
+  tokenType String   @default("REFRESH") @map("token_type") // 令牌类型: REFRESH|ACCESS
+  reason    String   @default("LOGOUT")             // 失效原因: LOGOUT|FORCED_LOGOUT|SECURITY|EXPIRED
+  expiresAt DateTime @map("expires_at")             // 令牌原始过期时间
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // 关系定义
+  user User @relation("UserTokens", fields: [userId], references: [id], onDelete: Cascade)
+
+  // 索引优化 - 快速查找令牌和清理过期记录
+  @@index([token])                  // 令牌查找
+  @@index([jti])                   // JTI查找  
+  @@index([userId, createdAt])     // 用户令牌历史
+  @@index([expiresAt])             // 过期时间清理
+  @@map("token_blacklist")
+}
+
+// 器材类型表 - 消防器材分类管理
+model EquipmentType {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+  
+  // 关系定义
+  equipments         Equipment[]
+  checklistTemplates ChecklistTemplate[]
+  
+  @@map("equipment_types")
+}
+
+// 点检项模板表 - 每种器材类型的检查标准
+model ChecklistTemplate {
+  id        Int @id @default(autoincrement())
+  typeId    Int @map("type_id")
+  itemName  String @map("item_name")
+  sortOrder Int @map("sort_order")
+  
+  // 关系定义
+  equipmentType EquipmentType @relation(fields: [typeId], references: [id], onDelete: Cascade)
+  
+  // 复合唯一约束 - 确保同一类型内排序唯一
+  @@unique([typeId, sortOrder])
+  @@map("checklist_templates")
+}
+
+// 消防器材表 - 核心器材台账
+model Equipment {
+  id                Int      @id @default(autoincrement())
+  qrCode           String   @unique @map("qr_code")
+  name             String
+  typeId           Int      @map("type_id")
+  factoryId        Int      @map("factory_id")
+  location         String
+  specifications   String?
+  productionDate   DateTime @map("production_date")
+  expiryDate       DateTime @map("expiry_date")
+  status           String   @default("NORMAL") @map("status") // SQLite兼容: NORMAL|ABNORMAL|SCRAPPED
+  lastInspectedAt  DateTime? @map("last_inspected_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+  
+  // 关系定义
+  equipmentType  EquipmentType   @relation(fields: [typeId], references: [id])
+  factory        Factory         @relation(fields: [factoryId], references: [id], onDelete: Cascade)
+  inspectionLogs InspectionLog[]
+  issues         Issue[]
+  
+  // 索引优化策略
+  @@index([factoryId, status])      // 厂区级数据隔离 + 状态筛选
+  @@index([expiryDate])             // 即将过期器材查询
+  @@index([qrCode])                 // 扫码查询优化
+  @@map("equipments")
+}
+
+// 隐患处理表 - 异常上报和整改流程管理
+model Issue {
+  id           Int         @id @default(autoincrement())
+  equipmentId  Int         @map("equipment_id")
+  description  String
+  reporterId   Int         @map("reporter_id")
+  
+  // 多图片支持 - 新字段使用JSON数组格式存储多个图片URL
+  issueImageUrls String?    @map("issue_image_urls")  // JSON数组格式: ["url1", "url2", ...]
+  
+  // 向下兼容 - 保留原有单图片字段，优先使用新字段
+  issueImageUrl String?    @map("issue_image_url")
+  
+  status       String      @default("PENDING") @map("status") // SQLite兼容: PENDING|IN_PROGRESS|PENDING_AUDIT|CLOSED|REJECTED
+  createdAt    DateTime    @default(now()) @map("created_at")
+  
+  // 处理信息字段
+  handlerId     Int?      @map("handler_id")
+  handledAt     DateTime? @map("handled_at")
+  solution      String?
+  
+  // 多图片支持 - 整改后图片数组
+  fixedImageUrls String?   @map("fixed_image_urls")  // JSON数组格式: ["url1", "url2", ...]
+  
+  // 向下兼容 - 保留原有单图片字段，优先使用新字段
+  fixedImageUrl String?   @map("fixed_image_url")
+  
+  // 审核信息字段
+  auditorId     Int?      @map("auditor_id")
+  auditedAt     DateTime? @map("audited_at")
+  auditNote     String?   @map("audit_note")
+  
+  // 关系定义
+  equipment     Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+  reporter      User      @relation("ReportedBy", fields: [reporterId], references: [id])
+  handler       User?     @relation("HandledBy", fields: [handlerId], references: [id])
+  auditor       User?     @relation("AuditedBy", fields: [auditorId], references: [id])
+  inspectionLog InspectionLog?
+  
+  // 索引优化 - 状态和时间的复合查询
+  @@index([status, createdAt])
+  @@index([equipmentId])
+  @@map("issues")
+}
+
+// 点检记录表 - 核心的点检操作日志
+model InspectionLog {
+  id                 Int      @id @default(autoincrement())
+  equipmentId        Int      @map("equipment_id")
+  inspectorId        Int      @map("inspector_id")
+  overallResult      String   @default("NORMAL") @map("overall_result") // SQLite兼容: NORMAL|ABNORMAL
+  
+  // 多图片支持 - 新字段使用JSON数组格式存储多个图片URL
+  inspectionImageUrls String?  @map("inspection_image_urls") // JSON数组格式: ["url1", "url2", ...]
+  
+  // 向下兼容 - 保留原有单图片字段，优先使用新字段
+  inspectionImageUrl String?   @map("inspection_image_url")
+  
+  inspectionTime     DateTime @default(now()) @map("inspection_time")
+  issueId            Int?     @unique @map("issue_id")
+  
+  // 点检项详情 - JSON字符串格式存储具体检查结果
+  // 格式: JSON字符串 [{"itemName": "压力表指针是否在绿区", "result": "normal|abnormal", "note": "备注"}]
+  checklistResults   String   @map("checklist_results") // SQLite兼容: 存储JSON字符串
+  
+  // 关系定义
+  equipment Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+  inspector User      @relation(fields: [inspectorId], references: [id])
+  issue     Issue?    @relation(fields: [issueId], references: [id])
+  
+  // 索引优化 - 时间范围和器材历史查询
+  @@index([inspectionTime])
+  @@index([equipmentId, inspectionTime])
+  @@map("inspection_logs")
+}
+
+// 审计日志表 - 记录系统操作审计信息
+model AuditLog {
+  id          Int      @id @default(autoincrement())
+  userId      Int?     @map("user_id")                    // 操作用户ID，可为空（系统操作）
+  userRole    String?  @map("user_role")                  // 用户角色
+  factoryId   Int?     @map("factory_id")                 // 关联厂区ID
+  action      String                                       // 操作类型: CREATE|UPDATE|DELETE|LOGIN|LOGOUT等
+  resource    String                                       // 操作的资源类型: User|Equipment|Issue|InspectionLog等
+  resourceId  String?  @map("resource_id")                // 操作的资源ID
+  details     String?                                      // 操作详情（JSON格式存储）
+  ipAddress   String?  @map("ip_address")                 // 客户端IP地址
+  userAgent   String?  @map("user_agent")                 // 客户端User-Agent
+  level       String   @default("INFO")                   // 日志级别: DEBUG|INFO|WARN|ERROR
+  status      String   @default("SUCCESS")                // 操作状态: SUCCESS|FAILED|PENDING
+  timestamp   DateTime @default(now())                    // 操作时间
+  createdAt   DateTime @default(now()) @map("created_at") // 记录创建时间
+
+  // 关系定义
+  user    User?    @relation(fields: [userId], references: [id])
+  factory Factory? @relation(fields: [factoryId], references: [id])
+
+  // 索引优化 - 支持高效的审计查询
+  @@index([userId, timestamp])        // 用户操作历史查询
+  @@index([action, timestamp])        // 操作类型时间查询
+  @@index([resource, timestamp])      // 资源操作历史查询
+  @@index([factoryId, timestamp])     // 厂区操作审计查询
+  @@index([level, timestamp])         // 按日志级别查询
+  @@index([timestamp])                // 时间范围查询
+  @@map("audit_logs")
+}
+
+// 安全日志表 - 记录安全相关事件
+model SecurityLog {
+  id          Int      @id @default(autoincrement())
+  eventType   String   @map("event_type")                 // 安全事件类型: LOGIN_ATTEMPT|PERMISSION_DENIED|SUSPICIOUS_ACTIVITY等
+  userId      Int?     @map("user_id")                    // 相关用户ID
+  userRole    String?  @map("user_role")                  // 用户角色
+  factoryId   Int?     @map("factory_id")                 // 关联厂区ID
+  severity    String   @default("LOW")                    // 严重程度: LOW|MEDIUM|HIGH|CRITICAL
+  description String                                       // 事件描述
+  metadata    String?                                      // 事件元数据（JSON格式）
+  ipAddress   String?  @map("ip_address")                 // 客户端IP地址
+  userAgent   String?  @map("user_agent")                 // 客户端User-Agent
+  resolved    Boolean  @default(false)                    // 是否已处理
+  resolvedAt  DateTime? @map("resolved_at")               // 处理时间
+  resolvedBy  Int?     @map("resolved_by")                // 处理人ID
+  timestamp   DateTime @default(now())                    // 事件发生时间
+  createdAt   DateTime @default(now()) @map("created_at") // 记录创建时间
+
+  // 关系定义
+  user      User?    @relation(fields: [userId], references: [id])
+  factory   Factory? @relation(fields: [factoryId], references: [id])
+  resolver  User?    @relation("SecurityLogResolver", fields: [resolvedBy], references: [id])
+
+  // 索引优化 - 支持安全事件分析
+  @@index([eventType, timestamp])     // 事件类型时间查询
+  @@index([severity, resolved])       // 严重程度和处理状态
+  @@index([userId, timestamp])        // 用户安全事件历史
+  @@index([factoryId, timestamp])     // 厂区安全事件查询
+  @@index([timestamp])                // 时间范围查询
+  @@map("security_logs")
+}
+
+// 系统错误日志表 - 记录系统运行错误
+model ErrorLog {
+  id          Int      @id @default(autoincrement())
+  errorType   String   @map("error_type")                 // 错误类型: DATABASE|API|VALIDATION|SYSTEM等
+  severity    String   @default("ERROR")                  // 错误级别: DEBUG|INFO|WARN|ERROR|FATAL
+  message     String                                       // 错误消息
+  stackTrace  String?  @map("stack_trace")                // 错误堆栈信息
+  context     String?                                      // 错误上下文（JSON格式）
+  userId      Int?     @map("user_id")                    // 相关用户ID
+  factoryId   Int?     @map("factory_id")                 // 关联厂区ID
+  endpoint    String?                                      // 发生错误的API端点
+  method      String?                                      // HTTP方法
+  ipAddress   String?  @map("ip_address")                 // 客户端IP地址
+  userAgent   String?  @map("user_agent")                 // 客户端User-Agent
+  resolved    Boolean  @default(false)                    // 是否已处理
+  resolvedAt  DateTime? @map("resolved_at")               // 处理时间
+  resolvedBy  Int?     @map("resolved_by")                // 处理人ID
+  timestamp   DateTime @default(now())                    // 错误发生时间
+  createdAt   DateTime @default(now()) @map("created_at") // 记录创建时间
+
+  // 关系定义
+  user     User?    @relation(fields: [userId], references: [id])
+  factory  Factory? @relation(fields: [factoryId], references: [id])
+  resolver User?    @relation("ErrorLogResolver", fields: [resolvedBy], references: [id])
+
+  // 索引优化 - 支持错误分析和监控
+  @@index([errorType, timestamp])     // 错误类型时间查询
+  @@index([severity, resolved])       // 错误级别和处理状态
+  @@index([endpoint, timestamp])      // API端点错误统计
+  @@index([userId, timestamp])        // 用户相关错误查询
+  @@index([factoryId, timestamp])     // 厂区错误查询
+  @@index([timestamp])                // 时间范围查询
+  @@map("error_logs")
+}
+
+// ===== 多层次权限管理系统 =====
+
+// 权限定义表 - 系统中所有可用的权限定义
+model Permission {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique                        // 权限编码，如: equipment:read, user:create
+  name        String                                   // 权限显示名称
+  description String?                                  // 权限详细描述
+  module      String                                   // 所属模块：equipment|inspection|issue|user|report|system
+  category    String   @default("FUNCTIONAL")         // 权限类型：SYSTEM|MODULE|DATA|FIELD
+  level       Int      @default(1)                    // 权限级别：1=基础权限，2=高级权限，3=超级权限
+  isActive    Boolean  @default(true) @map("is_active") // 是否启用
+  isSystem    Boolean  @default(false) @map("is_system") // 是否为系统预设权限
+  sortOrder   Int      @default(0) @map("sort_order") // 显示顺序
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // 关系定义
+  rolePermissions RolePermission[]  // 角色权限关联
+  userPermissions UserPermission[]  // 用户个人权限
+  permissionLogs  PermissionLog[]   // 权限变更日志
+
+  // 索引优化
+  @@index([module, category])       // 按模块和类型查询
+  @@index([isActive, level])        // 按状态和级别查询
+  @@index([code])                   // 权限编码查询
+  @@map("permissions")
+}
+
+// 角色模板表 - 预定义的角色模板
+model Role {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique                        // 角色编码，如: EQUIPMENT_MANAGER
+  name        String                                   // 角色显示名称
+  description String?                                  // 角色描述
+  level       Int      @default(1)                    // 角色级别：1=普通用户，2=管理员，3=超级管理员
+  isActive    Boolean  @default(true) @map("is_active") // 是否启用
+  isSystem    Boolean  @default(false) @map("is_system") // 是否为系统预设角色
+  isDefault   Boolean  @default(false) @map("is_default") // 是否为默认角色
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // 关系定义
+  rolePermissions RolePermission[]  // 角色权限关联
+  userRoles       UserRole[]        // 用户角色关联
+  permissionLogs  PermissionLog[]   // 权限变更日志
+
+  // 索引优化
+  @@index([isActive, level])        // 按状态和级别查询
+  @@index([code])                   // 角色编码查询
+  @@map("roles")
+}
+
+// 角色权限关联表
+model RolePermission {
+  id           Int @id @default(autoincrement())
+  roleId       Int @map("role_id")
+  permissionId Int @map("permission_id")
+
+  // 关系定义
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  // 确保每个角色的权限唯一
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+// 用户角色关联表 - 用户拥有的角色
+model UserRole {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  roleId    Int      @map("role_id")
+  grantedAt DateTime @default(now()) @map("granted_at") // 授予时间
+  grantedBy Int?     @map("granted_by")                  // 授予人ID
+  expiresAt DateTime? @map("expires_at")                 // 过期时间（可选）
+
+  // 关系定义
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  // 确保用户的每个角色唯一
+  @@unique([userId, roleId])
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("user_roles")
+}
+
+// 用户个人权限表 - 用户特定的权限（可覆盖角色权限）
+model UserPermission {
+  id           Int      @id @default(autoincrement())
+  userId       Int      @map("user_id")
+  permissionId Int      @map("permission_id")
+  isGranted    Boolean  @default(true) @map("is_granted") // true=授予，false=拒绝
+  grantedAt    DateTime @default(now()) @map("granted_at") // 授予时间
+  grantedBy    Int?     @map("granted_by")                 // 授予人ID
+  expiresAt    DateTime? @map("expires_at")                // 过期时间（可选）
+  reason       String?                                      // 授予原因
+
+  // 关系定义
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  // 确保用户的每个权限唯一
+  @@unique([userId, permissionId])
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("user_permissions")
+}
+
+// 权限变更审计日志表
+model PermissionLog {
+  id             Int      @id @default(autoincrement())
+  actionType     String   @map("action_type")           // 操作类型：GRANT_ROLE|REVOKE_ROLE|GRANT_PERMISSION|REVOKE_PERMISSION
+  targetUserId   Int      @map("target_user_id")        // 目标用户ID
+  operatorId     Int?     @map("operator_id")           // 操作人ID
+  roleId         Int?     @map("role_id")               // 相关角色ID（角色操作时）
+  permissionId   Int?     @map("permission_id")         // 相关权限ID（权限操作时）
+  oldValue       String?  @map("old_value")             // 变更前的值（JSON格式）
+  newValue       String?  @map("new_value")             // 变更后的值（JSON格式）
+  reason         String?                                 // 操作原因
+  ipAddress      String?  @map("ip_address")            // 操作IP
+  userAgent      String?  @map("user_agent")            // 用户代理
+  factoryId      Int?     @map("factory_id")            // 关联厂区ID
+  timestamp      DateTime @default(now())               // 操作时间
+  
+  // 关系定义
+  targetUser  User        @relation("PermissionTarget", fields: [targetUserId], references: [id], onDelete: Cascade)
+  operator    User?       @relation("PermissionOperator", fields: [operatorId], references: [id])
+  role        Role?       @relation(fields: [roleId], references: [id])
+  permission  Permission? @relation(fields: [permissionId], references: [id])
+
+  // 索引优化
+  @@index([targetUserId, timestamp])      // 目标用户权限历史
+  @@index([operatorId, timestamp])        // 操作人操作历史
+  @@index([actionType, timestamp])        // 操作类型时间查询
+  @@index([factoryId, timestamp])         // 厂区权限变更查询
+  @@index([timestamp])                    // 时间范围查询
+  @@map("permission_logs")
+}
