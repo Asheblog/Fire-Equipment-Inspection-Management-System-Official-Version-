@@ -19,6 +19,8 @@
  */
 
 const { exec } = require('child_process');
+const fs = require('fs');
+const path = require('path');
 
 function run(cmd, opts = {}) {
   return new Promise((resolve, reject) => {
@@ -35,34 +37,157 @@ function run(cmd, opts = {}) {
 
 function parseArgs() {
   const args = process.argv.slice(2);
-  const opts = { branch: 'master', hard: false, force: false, quiet: false, repo: 'https://github.com/Asheblog/Fire-Equipment-Inspection-Management-System-Official-Version-.git', depth: 1 };
+  const envProtect = process.env.PROTECT_DIRS ? process.env.PROTECT_DIRS.split(',').map(s => s.trim()).filter(Boolean) : [];
+  const opts = { branch: 'master', hard: false, force: false, quiet: false, repo: 'https://github.com/Asheblog/Fire-Equipment-Inspection-Management-System-Official-Version-.git', depth: 1, protect: envProtect };
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '--branch' && args[i + 1]) { opts.branch = args[++i]; continue; }
     if (a === '--hard') { opts.hard = true; continue; }
     if (a === '--force') { opts.force = true; continue; }
     if (a === '--quiet') { opts.quiet = true; continue; }
+    if (a === '--protect' && args[i + 1]) {
+      const list = args[++i].split(',').map(s => s.trim()).filter(Boolean);
+      opts.protect.push(...list);
+      continue;
+    }
     if (a === '--repo' && args[i + 1]) { opts.repo = args[++i]; continue; }
     if (a === '--depth' && args[i + 1]) { opts.depth = parseInt(args[++i], 10) || 1; continue; }
     if (a === '--help' || a === '-h') { printHelp(); process.exit(0); }
     console.warn(`未知参数: ${a}`);
   }
+  // 去重
+  opts.protect = Array.from(new Set(opts.protect));
   return opts;
 }
 
 function printHelp() {
-  console.log(`同步远程到本地脚本\n\n用法: node sync-remote.js [选项]\n\n选项:\n  --branch <name>   指定分支 (默认 master)\n  --repo <url>      仓库地址 (默认 Fire-Equipment ...)\n  --depth <n>       浅获取深度 (默认 1)\n  --hard            使用 hard reset 覆盖\n  --force           忽略未提交修改直接覆盖\n  --quiet           精简输出\n  -h, --help        显示帮助\n\n特性:\n  * 若当前目录不是 git 仓库, 自动初始化并拉取 (--repo / --branch)\n  * 后续再次运行执行增量同步\n`);
+  console.log(`同步远程到本地脚本\n\n用法: node sync-remote.js [选项]\n\n选项:\n  --branch <name>      指定分支 (默认 master)\n  --repo <url>         仓库地址 (默认 Fire-Equipment ...)\n  --depth <n>          浅获取深度 (默认 1)\n  --protect a,b        保护目录(逗号分隔/可多次, 不覆盖)\n  --hard               使用 hard reset 覆盖\n  --force              忽略未提交修改直接覆盖\n  --quiet              精简输出\n  -h, --help           显示帮助\n\n环境变量: PROTECT_DIRS="data,uploads"  等同于 --protect data,uploads\n特性:\n  * 非 git 目录自动初始化\n  * 支持保护本地数据目录(不被远程覆盖)\n`);
+}
+
+function pathExists(p) { try { fs.accessSync(p); return true; } catch { return false; } }
+
+function isDir(p) { try { return fs.statSync(p).isDirectory(); } catch { return false; } }
+
+async function isTracked(relPath) {
+  try {
+    const { stdout } = await run(`git ls-files -- ${relPath}`);
+    return !!stdout.trim();
+  } catch { return false; }
+}
+
+function copyIfMissing(src, dest) {
+  const stat = fs.statSync(src);
+  if (stat.isDirectory()) {
+    if (!pathExists(dest)) fs.mkdirSync(dest, { recursive: true });
+    for (const entry of fs.readdirSync(src)) {
+      copyIfMissing(path.join(src, entry), path.join(dest, entry));
+    }
+  } else if (stat.isFile()) {
+    if (!pathExists(dest)) {
+      fs.copyFileSync(src, dest);
+    }
+  }
+}
+
+async function backupProtectedDirs(list, log) {
+  const backups = [];
+  for (const item of list) {
+    const rel = item.replace(/^[\\/]+/, '').replace(/\\+/g, '/');
+    if (!pathExists(rel)) continue;
+    const tracked = await isTracked(rel);
+    if (tracked) {
+      log(`⚠ 保护目录 ${rel} 在仓库中被跟踪，跳过保护 (建议加入 .gitignore)`);
+      continue;
+    }
+    const backupName = `.protect-backup-${Date.now()}-${Math.random().toString(16).slice(2)}-${rel.replace(/\//g,'_')}`;
+    const backupPath = path.join('.', backupName);
+    fs.renameSync(rel, backupPath);
+    backups.push({ original: rel, backupPath });
+    log(`已临时移走保护目录 ${rel} -> ${backupPath}`);
+  }
+  return backups;
+}
+
+function restoreProtectedDirs(backups, log) {
+  for (const b of backups) {
+    if (pathExists(b.original)) {
+      // 目标存在(远程有该目录)，执行缺失文件合并
+      try { copyIfMissing(b.backupPath, b.original); } catch (e) { log(`合并保护目录失败 ${b.original}: ${e.message}`); }
+      // 删除备份
+      fs.rmSync(b.backupPath, { recursive: true, force: true });
+      log(`已合并保护目录: ${b.original}`);
+    } else {
+      fs.renameSync(b.backupPath, b.original);
+      log(`已恢复保护目录: ${b.original}`);
+    }
+  }
 }
 
 async function bootstrapRepo(opts, log) {
-  log('当前目录不是 git 仓库，执行自举初始化...');
-  await run('git init');
-  await run(`git remote add origin ${opts.repo}`);
+  log('当前目录不是完整 git 仓库，执行自举初始化...');
+  // 若 .git 已存在但未成功创建分支 (上次失败)，不用再次 init
+  let needInit = false;
+  try { await run('git rev-parse --is-inside-work-tree'); } catch { needInit = true; }
+  if (needInit) {
+    await run('git init');
+    await run(`git remote add origin ${opts.repo}`);
+  } else {
+    // 确保远程存在（可能尚未添加）
+    try { await run('git remote get-url origin'); } catch { await run(`git remote add origin ${opts.repo}`); }
+  }
   log(`获取远程分支: ${opts.branch} (depth=${opts.depth})`);
   await run(`git fetch --depth=${opts.depth} origin ${opts.branch}`);
-  // 直接检出到工作区（覆盖当前文件，包括本脚本自身拷贝）
-  await run(`git checkout -b ${opts.branch} origin/${opts.branch}`);
+
+  let protectBackups = [];
+  if (opts.protect && opts.protect.length) {
+    protectBackups = await backupProtectedDirs(opts.protect, log);
+  }
+
+  // 处理可能与远程同名的本地未跟踪文件（典型就是当前脚本）
+  const scriptPath = process.argv[1];
+  const scriptName = scriptPath ? scriptPath.split(/[\\/]/).pop() : 'sync-remote.js';
+  let backupPath = null;
+  try {
+    await run(`git cat-file -e origin/${opts.branch}:${scriptName}`);
+    // 远程包含该脚本，若本地存在未跟踪文件会阻塞 checkout
+    if (fs.existsSync(scriptName)) {
+      // 简单判断是否未跟踪：如果 git ls-files 不含它
+      let tracked = false;
+      try {
+        const { stdout: ls } = await run(`git ls-files -- ${scriptName} || true`);
+        tracked = !!ls.trim();
+      } catch { tracked = false; }
+      if (!tracked) {
+        backupPath = `${scriptName}.bootstrap-backup-${Date.now()}`;
+        fs.renameSync(scriptName, backupPath);
+        log(`检测到未跟踪文件 ${scriptName} 将被远程覆盖，已暂存到 ${backupPath}`);
+      }
+    }
+  } catch { /* 远程不存在该脚本，忽略 */ }
+
+  // 尝试检出
+  try {
+    await run(`git checkout -b ${opts.branch} origin/${opts.branch}`);
+  } catch (e) {
+    // 如果分支已存在或之前部分成功，尝试强制对齐
+    log('标准检出失败，尝试直接创建/切换并重置到远程...');
+    try { await run(`git checkout ${opts.branch}`); } catch { await run(`git checkout -b ${opts.branch}`); }
+    await run(`git reset --hard origin/${opts.branch}`);
+  }
   await run(`git branch --set-upstream-to=origin/${opts.branch} ${opts.branch}`);
+
+  // 如果远程没有脚本但本地有备份，恢复它
+  if (backupPath) {
+    try {
+      await run(`git cat-file -e origin/${opts.branch}:${scriptName}`);
+      // 远程有，不恢复（使用远程版本）
+      fs.unlinkSync(backupPath); // 删除备份
+    } catch {
+      // 远程没有，恢复备份
+      if (!fs.existsSync(scriptName)) fs.renameSync(backupPath, scriptName);
+    }
+  }
+  if (protectBackups.length) restoreProtectedDirs(protectBackups, log);
   log('初始化完成。');
 }
 
@@ -73,15 +198,12 @@ async function main() {
 
   try {
     let insideGit = true;
-    try {
-      await run('git rev-parse --is-inside-work-tree');
-    } catch (_) {
-      insideGit = false;
+    try { await run('git rev-parse --is-inside-work-tree'); } catch { insideGit = false; }
+    // 还需判断是否已有 HEAD（有些情况下 init 后未 checkout 会失败）
+    if (insideGit) {
+      try { await run('git rev-parse HEAD'); } catch { insideGit = false; }
     }
-
-    if (!insideGit) {
-      await bootstrapRepo(opts, log);
-    }
+    if (!insideGit) await bootstrapRepo(opts, log);
     const { stdout: repoRoot } = await run('git rev-parse --show-toplevel');
     log(`仓库根目录: ${repoRoot}`);
 
@@ -121,6 +243,11 @@ async function main() {
       if (diffLines.length > 40) log(`  ... 其余 ${diffLines.length - 40} 个文件`);
     }
 
+    let protectBackups = [];
+    if (opts.protect && opts.protect.length) {
+      protectBackups = await backupProtectedDirs(opts.protect, log);
+    }
+
     if (opts.hard || !isAncestor) {
       log(opts.hard ? '执行 hard reset 覆盖本地...' : '无法 fast-forward，执行 hard reset 覆盖本地...');
       await run(`git reset --hard origin/${opts.branch}`);
@@ -133,6 +260,8 @@ async function main() {
         await run(`git reset --hard origin/${opts.branch}`);
       }
     }
+
+    if (protectBackups.length) restoreProtectedDirs(protectBackups, log);
 
     const duration = ((Date.now() - start) / 1000).toFixed(2);
     log(`✔ 更新完成 (耗时 ${duration}s)`);
