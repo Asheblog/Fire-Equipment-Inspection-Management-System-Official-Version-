@@ -29,7 +29,7 @@ interface SystemSettings {
 }
 
 export const SystemSettingsPage: React.FC = () => {
-  const { isSuperAdmin } = useAuthStore()
+  const { isSuperAdmin, token } = useAuthStore()
   const [settings, setSettings] = useState<SystemSettings>({
     systemName: '消防器材点检管理系统',
     systemVersion: 'v1.0.0',
@@ -65,7 +65,10 @@ export const SystemSettingsPage: React.FC = () => {
       // 保存二维码基础URL
       await fetch('/api/system-settings/qr-base-url', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
         body: JSON.stringify({ qrBaseUrl: settings.qrBaseUrl || null })
       }).then(async r => {
         if (!r.ok) throw new Error(await r.text())
@@ -117,7 +120,9 @@ export const SystemSettingsPage: React.FC = () => {
   useEffect(() => {
     (async () => {
       try {
-        const r = await fetch('/api/system-settings/qr-base-url');
+        const r = await fetch('/api/system-settings/qr-base-url', {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
         if (r.ok) {
           const data = await r.json();
           if (data?.data?.qrBaseUrl !== undefined) {

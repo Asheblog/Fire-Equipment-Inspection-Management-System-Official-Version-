@@ -248,30 +248,61 @@ async function main() {
       safeExec('npx prisma db push', { cwd: backendDir });
     }
 
-    // ====== 迁移后关键表兜底检测 ======
-    // 背景：曾出现只有增量迁移目录而缺失“基线迁移”，导致核心业务表未创建而种子失败。
-    // 策略：在执行 migrate deploy 后，通过对关键表做一次 SELECT 1 探测；若缺失，自动执行一次 db push 补齐。
-    // 适用：SQLite / 未来 MySQL / PostgreSQL （SELECT 1 FROM <table> LIMIT 1 失败即视为缺失）
+    // ====== 迁移后关键表兜底检测（改进版：SQLite 使用 sqlite3 .tables） ======
     const skipFallbackFlag = getFlagOrEnv('skip-schema-fallback','DEPLOY_SKIP_SCHEMA_FALLBACK', false);
     if (!/^(true|1|yes)$/i.test(String(skipFallbackFlag))) {
-      const criticalTables = ['factories','users','equipments'];
-      const missing = criticalTables.filter(t => !execOk(`npx prisma db execute --script "SELECT 1 FROM ${t} LIMIT 1;"`, { cwd: backendDir }));
-      if (missing.length > 0) {
-        log(`⚠️  迁移后检测到关键表缺失: ${missing.join(', ')}`, 'yellow');
-        log('⚠️  可能缺少基线迁移目录，执行兜底: prisma db push', 'yellow');
-        try {
-          safeExec('npx prisma db push', { cwd: backendDir });
-          const stillMissing = missing.filter(t => !execOk(`npx prisma db execute --script "SELECT 1 FROM ${t} LIMIT 1;"`, { cwd: backendDir }));
-          if (stillMissing.length === 0) {
-            log('✅  兜底 db push 已补齐关键表 (请后续补齐正式基线迁移)', 'green');
-          } else {
-            log(`❌  兜底后仍缺失: ${stillMissing.join(', ')} → 请手动检查 migrations/ 目录与 schema.prisma`, 'red');
+      try {
+        const criticalTables = ['factories','users','equipments'];
+        const schemaContent = fs.readFileSync(path.join(backendDir,'prisma','schema.prisma'),'utf8');
+        const isSqlite = /provider\s*=\s*"sqlite"/.test(schemaContent);
+        let missing = [];
+        if (isSqlite) {
+          const dbUrl = mergedEnv.DATABASE_URL || currentEnv.DATABASE_URL;
+          const m = /^file:(.+)$/.exec(dbUrl || '');
+          if (m) {
+            const dbFile = path.resolve(backendDir, m[1]);
+            if (fs.existsSync(dbFile)) {
+              let tableList = '';
+              try { tableList = execSync(`sqlite3 "${dbFile}" ".tables"`, { encoding:'utf8' }); } catch (se) {
+                log('⚠️  SQLite 表列表获取失败: '+ se.message, 'yellow');
+              }
+              missing = criticalTables.filter(t => !new RegExp(`(^|\s)${t}(\s|$)`).test(tableList));
+            } else {
+              log('⚠️  SQLite 数据库文件尚不存在，跳过关键表检测', 'yellow');
+            }
           }
-        } catch (fe) {
-          log('❌  兜底 db push 执行失败: ' + fe.message, 'red');
+        } else {
+          // 其它数据库暂未实现关键表检测，可在未来扩展
+          missing = [];
         }
-      } else {
-        log('🔎  迁移后关键表检测通过 (factories/users/equipments 均存在)', 'gray');
+        if (missing.length > 0) {
+          log(`⚠️  迁移后检测到关键表缺失: ${missing.join(', ')}`, 'yellow');
+          log('⚠️  可能缺少基线迁移目录，执行兜底: prisma db push', 'yellow');
+          try {
+            safeExec('npx prisma db push', { cwd: backendDir });
+            if (isSqlite) {
+              const dbUrl2 = mergedEnv.DATABASE_URL || currentEnv.DATABASE_URL;
+              const m2 = /^file:(.+)$/.exec(dbUrl2 || '');
+              if (m2) {
+                const dbFile2 = path.resolve(backendDir, m2[1]);
+                let tableList2 = '';
+                try { tableList2 = execSync(`sqlite3 "${dbFile2}" ".tables"`, { encoding:'utf8' }); } catch {}
+                const stillMissing = missing.filter(t => !new RegExp(`(^|\s)${t}(\s|$)`).test(tableList2));
+                if (stillMissing.length === 0) {
+                  log('✅  兜底 db push 已补齐关键表 (请后续补齐正式基线迁移)', 'green');
+                } else {
+                  log(`❌  兜底后仍缺失: ${stillMissing.join(', ')} → 请手动检查 migrations/ 与 schema.prisma`, 'red');
+                }
+              }
+            }
+          } catch (fe) {
+            log('❌  兜底 db push 执行失败: ' + fe.message, 'red');
+          }
+        } else {
+          log('🔎  迁移后关键表检测通过/或无需检测 (SQLite)', 'gray');
+        }
+      } catch (ce) {
+        log('⚠️  关键表检测过程异常（忽略）：'+ ce.message, 'yellow');
       }
     } else {
       log('⏭️  跳过关键表兜底检测 (已由参数禁用)', 'gray');
