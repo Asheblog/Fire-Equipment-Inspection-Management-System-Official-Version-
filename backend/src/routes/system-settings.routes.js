@@ -6,7 +6,23 @@ const EnhancedAuthMiddleware = require('../middleware/enhanced-auth.middleware')
 const auth = new EnhancedAuthMiddleware();
 const { authenticate, authorize } = auth;
 
-// 获取当前二维码基础URL设置
+// 统一获取全部系统设置
+router.get('/', authenticate, authorize('*:*'), async (req, res) => {
+  try {
+    const records = await prisma.systemSetting.findMany();
+    const map = {};
+    for (const r of records) {
+      map[r.key] = r.value || '';
+    }
+    return res.json({ success: true, data: {
+      qrBaseUrl: map['qr_base_url'] || ''
+    }});
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// 兼容旧接口: 获取当前二维码基础URL设置
 router.get('/qr-base-url', authenticate, authorize('*:*'), async (req, res) => {
   try {
     const rec = await prisma.systemSetting.findUnique({ where: { key: 'qr_base_url' } });

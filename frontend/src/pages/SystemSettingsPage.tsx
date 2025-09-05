@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react'
 import { useAuthStore } from '@/stores/auth'
+import { api } from '@/api/client'
 import { PageContainer } from '@/components/layout/PageContainer'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { ContentSection } from '@/components/layout/ContentSection'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
@@ -62,17 +64,8 @@ export const SystemSettingsPage: React.FC = () => {
   const handleSaveSettings = async () => {
     setIsSaving(true)
     try {
-      // 保存二维码基础URL
-      await fetch('/api/system-settings/qr-base-url', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({ qrBaseUrl: settings.qrBaseUrl || null })
-      }).then(async r => {
-        if (!r.ok) throw new Error(await r.text())
-      })
+      // 保存二维码基础URL（使用统一api封装，自动携带token与刷新逻辑）
+      await api.put('/system-settings/qr-base-url', { qrBaseUrl: settings.qrBaseUrl || null })
       
       // 模拟API调用
       await new Promise(resolve => setTimeout(resolve, 1000))
@@ -117,23 +110,24 @@ export const SystemSettingsPage: React.FC = () => {
     }
   }
 
+  // 当 token 就绪且用户为超级管理员时再拉取全部系统设置
   useEffect(() => {
+    if (!token) return
+    if (!isSuperAdmin()) return
     (async () => {
+      setIsLoadingSettings(true)
       try {
-        const r = await fetch('/api/system-settings/qr-base-url', {
-          headers: token ? { Authorization: `Bearer ${token}` } : {}
-        });
-        if (r.ok) {
-          const data = await r.json();
-          if (data?.data?.qrBaseUrl !== undefined) {
-            setSettings(prev => ({ ...prev, qrBaseUrl: data.data.qrBaseUrl }));
-          }
+        const data: any = await api.get('/system-settings')
+        if (data?.data) {
+          setSettings(prev => ({ ...prev, qrBaseUrl: data.data.qrBaseUrl ?? prev.qrBaseUrl }))
         }
-      } catch (_) {
-        // ignore
+      } catch (e: any) {
+        console.warn('加载系统设置失败:', e?.message || e)
+      } finally {
+        setIsLoadingSettings(false)
       }
-    })();
-  }, []);
+    })()
+  }, [token, isSuperAdmin]);
 
   return (
     <PageContainer>
@@ -145,6 +139,33 @@ export const SystemSettingsPage: React.FC = () => {
 
       <ContentSection>
         <div className="grid gap-6 max-w-4xl">
+          {isLoadingSettings && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Shield className="h-5 w-5" />
+                  系统信息
+                </CardTitle>
+                <CardDescription>正在加载系统配置...</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>系统名称</Label>
+                    <Skeleton className="h-9 w-full" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>系统版本</Label>
+                    <Skeleton className="h-9 w-full" />
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label>二维码基础URL</Label>
+                    <Skeleton className="h-9 w-full" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
           {/* 系统信息卡片 */}
           <Card>
             <CardHeader>
