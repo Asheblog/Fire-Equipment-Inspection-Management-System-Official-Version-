@@ -63,6 +63,7 @@ interface EquipmentInspectionForm {
 
 export const MobileInspectionPage: React.FC = () => {
   // 监听认证状态失效自动跳转
+  const navigate = useNavigate()
   const { isAuthenticated } = useAuthStore()
   useEffect(() => {
     if (!isAuthenticated) {
@@ -70,7 +71,6 @@ export const MobileInspectionPage: React.FC = () => {
     }
   }, [isAuthenticated, navigate])
   const { qrCode } = useParams<{ qrCode: string }>()
-  const navigate = useNavigate()
 
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
