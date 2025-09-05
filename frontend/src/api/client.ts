@@ -12,7 +12,15 @@ const apiClient: AxiosInstance = axios.create({
 // (Initial simple request interceptor removed; merged into preemptive logic below)
 
 // ---------- Preemptive + automatic refresh logic ----------
-const PREEMPTIVE_REFRESH_WINDOW_SECONDS = 120
+// ==== Added auth failure short-circuit logic START ====
+function forceLogoutRedirect() {
+  const { logout } = useAuthStore.getState() as any
+  try { logout() } catch {}
+  if (typeof window !== 'undefined') window.location.href = '/login'
+}
+// ==== Added auth failure short-circuit logic END ====
+const PREEMPTIVE_REFRESH_WINDOW_SECONDS = 120 // 若token剩余不足该秒数且有refreshToken则预刷新
+const AUTH_INVALID_CODES = ['TOKEN_INVALID','TOKEN_EXPIRED','REFRESH_FAILED']
 let isRefreshing = false
 
 interface RefreshQueueItem {
@@ -53,7 +61,7 @@ apiClient.interceptors.request.use(
     if (token) {
       const remain = parseTokenRemaining(token)
       if (remain !== null && remain < PREEMPTIVE_REFRESH_WINDOW_SECONDS && refreshToken) {
-        try { const newTok = await performRefresh(refreshToken, setToken, logout); config.headers.Authorization = `Bearer ${newTok}`; return config } catch { return Promise.reject(new Error('Preemptive refresh failed')) }
+        try { const newTok = await performRefresh(refreshToken, setToken, logout); config.headers.Authorization = `Bearer ${newTok}`; return config } catch { forceLogoutRedirect(); return Promise.reject(new Error('Preemptive refresh failed')) }
       }
       config.headers.Authorization = `Bearer ${token}`
     }
@@ -67,7 +75,17 @@ apiClient.interceptors.response.use(
   (response: AxiosResponse) => response,
   async (error) => {
     const original: any = error.config || {}
-    if (error.response?.status !== 401 || original._retry) return Promise.reject(error)
+    const status = error.response?.status
+    const code = error.response?.data?.error
+    const reqUrl = (original.url || original.__isRetryRequest || original.baseURL ? (original.baseURL?original.baseURL:"") + (original.url||"") : original.url) || ""
+
+    // 短路：刷新接口自身401 或 明确失效错误码
+    if (status === 401 && (reqUrl.includes("/auth/refresh") || AUTH_INVALID_CODES.includes(code))) {
+      forceLogoutRedirect();
+      return Promise.reject(error)
+    }
+
+    if (status !== 401 || original._retry) return Promise.reject(error)
     const { refreshToken, setToken, logout } = useAuthStore.getState() as any
     if (!refreshToken) { logout(); window.location.href = '/login'; return Promise.reject(error) }
     if (isRefreshing) {

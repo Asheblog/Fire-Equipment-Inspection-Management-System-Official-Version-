@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useAuthStore } from '@/stores/auth'
 import { useParams, useNavigate } from 'react-router-dom'
 import { formatQrCodeDisplay } from '@/utils/qrCode'
 import { equipmentApi, inspectionApi } from '@/api'
@@ -61,6 +62,13 @@ interface EquipmentInspectionForm {
 }
 
 export const MobileInspectionPage: React.FC = () => {
+  // 监听认证状态失效自动跳转
+  const { isAuthenticated } = useAuthStore()
+  useEffect(() => {
+    if (!isAuthenticated) {
+      navigate('/login', { replace: true })
+    }
+  }, [isAuthenticated, navigate])
   const { qrCode } = useParams<{ qrCode: string }>()
   const navigate = useNavigate()
 
