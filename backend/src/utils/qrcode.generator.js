@@ -51,6 +51,9 @@ class QRCodeGenerator {
    * @returns {string} 基础URL
    */
   static getBaseURL() {
+    const debug = process.env.QR_DEBUG === 'true';
+    const dbg = (...args) => { if (debug) console.log('[QR_DEBUG][QRCodeGenerator]', ...args); };
+    dbg('enter getBaseURL');
     // Step 1: 尝试读取系统运行时配置（系统设置表）中的 qr_base_url（一次性异步加载并缓存）
     if (!this._cachedSettingChecked) {
       this._cachedSettingChecked = true;
@@ -85,6 +88,13 @@ class QRCodeGenerator {
           parsed.protocol = 'https:';
           finalFromSetting = parsed.toString().replace(/\/$/, '');
         }
+        finalFromSetting = finalFromSetting.replace(/^(https?:\/\/){2,}/i, 'https://');
+        if (/^https?:\/\/https?:\/\//i.test(finalFromSetting)) {
+          const parts = finalFromSetting.split(/https?:\/\//i).filter(p => p);
+          const last = parts[parts.length - 1];
+          finalFromSetting = 'https://' + last;
+        }
+        dbg('use cached setting', { cached: this._cachedQrBaseUrl, final: finalFromSetting });
         return finalFromSetting;
       } catch (_) {
         console.warn('⚠️ [QRCodeGenerator] qr_base_url 非法，回退到环境变量策略');
@@ -120,7 +130,7 @@ class QRCodeGenerator {
     const serverIP = this.getServerIP();
     const port = process.env.PORT || '3001';
     
-    console.log(`🔗 [QRCodeGenerator] 配置检查:`, {
+    dbg('env strategy before localhost/IP replacement', {
       配置的URL: configuredUrl,
       服务器IP: serverIP,
       端口: port
@@ -129,14 +139,14 @@ class QRCodeGenerator {
     // 如果仍然没有配置（既无 BASE_URL 也无 DOMAIN），使用服务器IP
     if (!configuredUrl) {
       const autoUrl = `http://${serverIP}:${port}`;
-      console.log(`💡 [QRCodeGenerator] 未配置BASE_URL，自动使用: ${autoUrl}`);
+      dbg('auto fallback url because no configuredUrl', autoUrl);
       return autoUrl;
     }
     
     // 如果配置的是localhost，自动替换为局域网IP
     if (configuredUrl.includes('localhost') && serverIP !== 'localhost') {
       const smartUrl = configuredUrl.replace('localhost', serverIP);
-      console.log(`🔄 [QRCodeGenerator] localhost自动替换: ${configuredUrl} → ${smartUrl}`);
+      dbg('localhost replaced with LAN IP', { before: configuredUrl, after: smartUrl });
       return smartUrl;
     }
     
@@ -154,7 +164,7 @@ class QRCodeGenerator {
       }
     }
 
-    console.log(`✅ [QRCodeGenerator] 使用配置的URL: ${configuredUrl}`);
+    dbg('final chosen base URL', configuredUrl);
     return configuredUrl;
   }
 

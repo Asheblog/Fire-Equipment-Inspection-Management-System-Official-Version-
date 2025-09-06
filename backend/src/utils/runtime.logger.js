@@ -48,6 +48,10 @@ function rotate(newDate) {
 }
 
 function openStreamIfNeeded() {
+  // 开发环境下 init() 会直接返回，没有设置 logDir。
+  // 但 morgan 仍然会通过 httpStream() -> writeLine() 进入这里。
+  // 若不短路，rotate() 内会执行 path.join(logDir, ...) 导致 logDir 为 null 时抛错。
+  if (!logDir) return; // not initialized (e.g. development)
   const today = getToday();
   if (today !== currentDateStr || !stream) rotate(today);
 }
@@ -66,7 +70,7 @@ function formatLine(level, parts) {
 }
 
 function writeLine(level, args) {
-  openStreamIfNeeded();
+  openStreamIfNeeded(); // 在未初始化时为 no-op
   const parts = args.map(safeSerialize);
   const line = formatLine(level, parts);
   if (stream) {
@@ -142,4 +146,3 @@ function writeClient(level, msg, meta = {}) {
 }
 
 module.exports = { init, restore, httpStream, writeClient };
-

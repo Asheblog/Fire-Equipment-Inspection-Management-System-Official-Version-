@@ -1,7 +1,12 @@
-/* Frontend console interception (production) */
+/* Frontend console interception (only enabled in production) */
 (function(){
   try {
-    var PROD = true; // served only in production deployment context
+    // 自动环境检测：常见开发端口 / host 视为开发环境（不启用上报）
+    var devPorts = ['5173', '5174', '3000'];
+    var isDevHeuristic = devPorts.includes(location.port) || /localhost|127\.0\.0\.1/.test(location.hostname);
+    // 允许通过全局变量强制启用: 在生产 HTML 中可设置 window.__ENABLE_CLIENT_LOG__ = true;
+    var forced = typeof window !== 'undefined' && window.__ENABLE_CLIENT_LOG__ === true;
+    var PROD = !isDevHeuristic || forced;
     if(!PROD) return;
     var tokenMeta = document.querySelector('meta[name="client-log-token"]');
     var LOG_TOKEN = tokenMeta ? tokenMeta.getAttribute('content') : '';
@@ -73,7 +78,11 @@
     }
 
     ['log','info','warn','error','debug'].forEach(function(l){
-      window.console[l] = function(){ enqueue(l, Array.prototype.slice.call(arguments)); };
+      var orig = window.console[l];
+      window.console[l] = function(){
+        try { enqueue(l, Array.prototype.slice.call(arguments)); } catch(_){}
+        try { orig && orig.apply(window.console, arguments); } catch(_){}
+      };
     });
 
     document.addEventListener('visibilitychange', function(){ if (document.visibilityState === 'hidden') flush(); });
@@ -83,4 +92,3 @@
     // If interception fails, we do nothing to avoid breaking app
   }
 })();
-
