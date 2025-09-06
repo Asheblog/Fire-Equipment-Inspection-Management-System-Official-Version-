@@ -6,6 +6,24 @@ const EnhancedAuthMiddleware = require('../middleware/enhanced-auth.middleware')
 const auth = new EnhancedAuthMiddleware();
 const { authenticate, authorize } = auth;
 
+// 统一规范化函数（GET 与 PUT 都使用，防止历史脏数据残留）
+function normalizeQrBaseUrl(input) {
+  if (!input) return '';
+  let url = String(input).trim();
+  // 移除零宽字符 / BOM
+  url = url.replace(/^[\u200B-\u200D\uFEFF]+/, '');
+  // 去掉所有前导斜杠
+  url = url.replace(/^\/*/, '');
+  // 统计并剥离所有前导协议，统一最后再加 https://
+  url = url.replace(/^(https?:\/\/)+/i, '');
+  // 再次清理可能的空格
+  url = url.trim();
+  if (!url) return '';
+  // 去除末尾单斜杠
+  url = url.replace(/\/$/, '');
+  return 'https://' + url; // 统一 https
+}
+
 // 统一获取全部系统设置
 router.get('/', authenticate, authorize('*:*'), async (req, res) => {
   try {
@@ -14,9 +32,22 @@ router.get('/', authenticate, authorize('*:*'), async (req, res) => {
     for (const r of records) {
       map[r.key] = r.value || '';
     }
-    return res.json({ success: true, data: {
-      qrBaseUrl: map['qr_base_url'] || ''
-    }});
+    let raw = map['qr_base_url'] || '';
+    const normalized = normalizeQrBaseUrl(raw);
+    // 若历史存的值不规范，后台自愈一次（异步，不阻塞响应）
+    if (raw && normalized && raw !== normalized) {
+      prisma.systemSetting.update({ where: { key: 'qr_base_url' }, data: { value: normalized } })
+        .then(() => {
+          try {
+            const QRCodeGenerator = require('../utils/qrcode.generator');
+            // 覆盖缓存为规范化后的值
+            QRCodeGenerator._cachedQrBaseUrl = normalized;
+            QRCodeGenerator._cachedSettingChecked = true;
+          } catch (_) {}
+        })
+        .catch(() => {});
+    }
+    return res.json({ success: true, data: { qrBaseUrl: normalized } });
   } catch (e) {
     return res.status(500).json({ success: false, message: e.message });
   }
@@ -27,7 +58,19 @@ router.get('/qr-base-url', authenticate, authorize('*:*'), async (req, res) => {
   try {
     const rec = await prisma.systemSetting.findUnique({ where: { key: 'qr_base_url' } });
     const value = rec?.value || '';
-    return res.json({ success: true, data: { qrBaseUrl: value } });
+    const normalized = normalizeQrBaseUrl(value);
+    if (value && normalized && value !== normalized) {
+      prisma.systemSetting.update({ where: { key: 'qr_base_url' }, data: { value: normalized } })
+        .then(() => {
+          try {
+            const QRCodeGenerator = require('../utils/qrcode.generator');
+            QRCodeGenerator._cachedQrBaseUrl = normalized;
+            QRCodeGenerator._cachedSettingChecked = true;
+          } catch (_) {}
+        })
+        .catch(() => {});
+    }
+    return res.json({ success: true, data: { qrBaseUrl: normalized } });
   } catch (e) {
     return res.status(500).json({ success: false, message: e.message });
   }
@@ -38,25 +81,7 @@ router.put('/qr-base-url', authenticate, authorize('*:*'), async (req, res) => {
   try {
     let { qrBaseUrl } = req.body || {};
     if (qrBaseUrl) {
-      qrBaseUrl = qrBaseUrl.trim();
-      // 去除可能的零宽字符 / BOM
-      qrBaseUrl = qrBaseUrl.replace(/^[\u200B-\u200D\uFEFF]+/, '');
-      // 折叠重复协议: https://https://domain.com -> https://domain.com
-      qrBaseUrl = qrBaseUrl.replace(/^(https?:\/\/){2,}/i, (m) => m.startsWith('https') ? 'https://' : 'http://');
-      // 若仍出现混合双协议 (例如 http://https://domain.com) 取最后主体并统一为 https
-      if (/^https?:\/\/https?:\/\//i.test(qrBaseUrl)) {
-        const parts = qrBaseUrl.split(/https?:\/\//i).filter(p => p);
-        const last = parts[parts.length - 1];
-        qrBaseUrl = 'https://' + last.replace(/^\/*/, '');
-      }
-      // 如果没有协议则补 https://
-      if (!/^https?:\/\//i.test(qrBaseUrl)) {
-        qrBaseUrl = 'https://' + qrBaseUrl.replace(/^\/*/, '');
-      }
-      // 再次防御性清理可能残留的双协议
-      qrBaseUrl = qrBaseUrl.replace(/^https?:\/\/https?:\/\//i, 'https://');
-      // 移除末尾单斜杠
-      qrBaseUrl = qrBaseUrl.replace(/\/$/, '');
+      qrBaseUrl = normalizeQrBaseUrl(qrBaseUrl);
     }
     await prisma.systemSetting.upsert({
       where: { key: 'qr_base_url' },
