@@ -1,6 +1,6 @@
 # 消防器材点检管理系统 🔥
 
-> 基于React 19 + Node.js 18的现代化消防安全管理平台，采用企业级架构设计
+> 基于React 19 + Node.js 20的现代化消防安全管理平台，采用企业级架构设计
 
 [![React](https://img.shields.io/badge/React-19.x-blue.svg)](https://reactjs.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-18.x-green.svg)](https://nodejs.org/)
@@ -39,7 +39,7 @@
 
 ### 后端技术栈 (Node.js 企业级)
 ```bash
-├── Node.js 18+           # 服务端运行时
+├── Node.js 20+           # 服务端运行时
 ├── Express.js 4.18       # Web框架
 ├── Prisma 5.7           # 现代化ORM
 ├── SQLite 3             # 轻量级数据库
@@ -246,13 +246,6 @@ npm run db:migrate:deploy # 应用迁移（生产）
 | 角色 | 用户名 | 密码 | 权限范围 | 描述 |
 |------|---------|------|----------|------|
 | **超级管理员** | admin | Test123!@# | 全系统管理 | 系统级权限，可管理所有厂区 |
-| **A厂区管理员** | admin_a | Test123!@# | A厂区管理 | 仅可A厂区资源管理 |
-| **B厂区管理员** | admin_b | Test123!@# | B厂区管理 | 仅可B厂区资源管理 |
-| **C厂区管理员** | admin_c | Test123!@# | C厂区管理 | 仅可C厂区资源管理 |
-| **点检员** | inspector_001 | Test123!@# | 扫码点检 | 移动端设备点检功能 |
-| **点检员** | inspector_002 | Test123!@# | 扫码点检 | 移动端设备点检功能 |
-| **点检员** | inspector_003 | Test123!@# | 扫码点检 | 移动端设备点检功能 |
-| **点检员** | inspector_004 | Test123!@# | 扫码点检 | 移动端设备点检功能 |
 
 > ⚠️ **安全提示**：生产环境部署后请立即修改默认密码！
 
@@ -321,7 +314,7 @@ npm run test:security # 安全检查
 ### 部署相关
 
 **Q: Node.js版本要求？**
-A: 需要Node.js 18.0.0或更高版本。可使用`node --version`检查当前版本。
+A: 需要Node.js 20.0.0或更高版本。可使用`node --version`检查当前版本。
 
 **Q: Windows系统如何生成SSL证书？**
 A: 系统会自动尝试使用selfsigned包生成证书。如果失败，请安装Git Bash或WSL。
@@ -333,9 +326,6 @@ A: 默认位于`backend/data/fire_safety.db`，可在.env文件中修改DATABASE
 
 **Q: 前端开发服务器端口冲突？**
 A: 默认端口为5173。可修改`frontend/vite.config.ts`中的端口配置。
-
-**Q: API文档在哪里？**
-A: 详细API文档位于`backend/docs/API_DOCUMENTATION.md`。
 
 **Q: 如何添加新的设备类型？**
 A: 1)修改Prisma schema 2)运行db:push更新结构 3)在管理后台添加设备类型和检查项模板。
@@ -367,10 +357,3 @@ MIT License - 详情参见 [LICENSE](LICENSE) 文件
 ## 👥 贡献
 
 欢迎提交Issue和Pull Request！请遵循项目的代码规范和提交规范。
-
----
-
-<div align="center">
-<p><strong>🔥 Fire Safety System v1.0 | 消防器材点检管理系统</strong></p>
-<p><em>由 Fire Safety System Team 精心打造</em></p>
-</div>
