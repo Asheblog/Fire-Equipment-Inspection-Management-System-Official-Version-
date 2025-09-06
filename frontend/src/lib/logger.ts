@@ -27,7 +27,7 @@ const DEBUG_MODULES_RAW = metaEnv.env?.VITE_DEBUG_MODULES || ''
 
 const debugModules = DEBUG_MODULES_RAW
   .split(/[,;\s]+/)
-  .map(s => s.trim())
+  .map((s: string) => s.trim())
   .filter(Boolean)
 
 const defaultLevel: LogLevel = metaEnv.env?.PROD ? 'info' : 'debug'
@@ -37,7 +37,7 @@ function matchModule(module?: string): boolean {
   if (!module) return true
   if (debugModules.includes('*')) return true
   if (debugModules.length === 0) return !metaEnv.env?.PROD // 生产未指定 => 不输出调试
-  return debugModules.some(pattern => {
+  return debugModules.some((pattern: string) => {
     if (pattern.endsWith('*')) return module.startsWith(pattern.slice(0, -1))
     return pattern === module
   })
