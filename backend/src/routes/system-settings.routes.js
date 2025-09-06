@@ -39,10 +39,23 @@ router.put('/qr-base-url', authenticate, authorize('*:*'), async (req, res) => {
     let { qrBaseUrl } = req.body || {};
     if (qrBaseUrl) {
       qrBaseUrl = qrBaseUrl.trim();
+      // 去除可能的零宽字符 / BOM
+      qrBaseUrl = qrBaseUrl.replace(/^[\u200B-\u200D\uFEFF]+/, '');
+      // 折叠重复协议: https://https://domain.com -> https://domain.com
+      qrBaseUrl = qrBaseUrl.replace(/^(https?:\/\/){2,}/i, (m) => m.startsWith('https') ? 'https://' : 'http://');
+      // 若仍出现混合双协议 (例如 http://https://domain.com) 取最后主体并统一为 https
+      if (/^https?:\/\/https?:\/\//i.test(qrBaseUrl)) {
+        const parts = qrBaseUrl.split(/https?:\/\//i).filter(p => p);
+        const last = parts[parts.length - 1];
+        qrBaseUrl = 'https://' + last.replace(/^\/*/, '');
+      }
+      // 如果没有协议则补 https://
       if (!/^https?:\/\//i.test(qrBaseUrl)) {
-        // 默认强制 https
         qrBaseUrl = 'https://' + qrBaseUrl.replace(/^\/*/, '');
       }
+      // 再次防御性清理可能残留的双协议
+      qrBaseUrl = qrBaseUrl.replace(/^https?:\/\/https?:\/\//i, 'https://');
+      // 移除末尾单斜杠
       qrBaseUrl = qrBaseUrl.replace(/\/$/, '');
     }
     await prisma.systemSetting.upsert({
