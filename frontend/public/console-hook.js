@@ -81,7 +81,9 @@
       var orig = window.console[l];
       window.console[l] = function(){
         try { enqueue(l, Array.prototype.slice.call(arguments)); } catch(_){}
-        try { orig && orig.apply(window.console, arguments); } catch(_){}
+        if (l === 'error') {
+          try { orig && orig.apply(window.console, arguments); } catch(_){}
+        }
       };
     });
 
