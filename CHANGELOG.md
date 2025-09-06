@@ -4,6 +4,7 @@
 
 ### 📚 文档
 - 新增 `AGENTS.md`：为智能代理提供约20行精简操作与代码规范指引（构建/端口、Lint、测试、数据库、风格、命名、错误处理、提交与安全等）。
+- Docs: Update AGENTS.md guidelines：补充单文件测试说明、Windows 环境提示、构建产物路径、缺失的 Cursor/Copilot 状态声明、依赖与提交规范精炼。
 
 ### 📚 文档重构
 
