@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { createLogger } from '@/lib/logger'
 import { useAuthStore } from '@/stores/auth'
 import { equipmentApi } from '@/api'
 import { isValidationError, extractValidationErrors, showValidationSummary, focusFirstError } from '@/utils/validation'
@@ -121,6 +122,7 @@ const createColumns = (
 ]
 
 export const EquipmentTypesPage: React.FC = () => {
+  const log = createLogger('EquipType')
   const { isSuperAdmin, isFactoryAdmin } = useAuthStore()
   const [equipmentTypes, setEquipmentTypes] = useState<EquipmentType[]>([])
   const [loading, setLoading] = useState(false)
@@ -161,7 +163,7 @@ export const EquipmentTypesPage: React.FC = () => {
       }
       
     } catch (err: any) {
-      console.error('加载器材类型数据失败:', err)
+      log.error('加载器材类型数据失败', err)
       setError(err.response?.data?.message || '加载失败')
       setEquipmentTypes([])
     } finally {
@@ -182,7 +184,7 @@ export const EquipmentTypesPage: React.FC = () => {
       }
       
     } catch (err: any) {
-      console.error('加载点检项模板失败:', err)
+      log.error('加载点检项模板失败', err)
       setChecklistTemplates([])
     } finally {
       setChecklistLoading(false)
@@ -222,7 +224,7 @@ export const EquipmentTypesPage: React.FC = () => {
         await equipmentApi.deleteType(type.id)
         await loadData() // 重新加载数据
       } catch (error: any) {
-        console.error('删除器材类型失败:', error)
+        log.error('删除器材类型失败', error)
         alert('删除失败: ' + (error.response?.data?.message || '网络错误'))
       }
     }
@@ -248,7 +250,7 @@ export const EquipmentTypesPage: React.FC = () => {
       await equipmentApi.createChecklistTemplate(selectedType.id, { itemName: itemName.trim() })
       await loadChecklistTemplates(selectedType.id) // 重新加载点检项
     } catch (error: any) {
-      console.error('添加点检项失败:', error)
+      log.error('添加点检项失败', error)
       alert('添加失败: ' + (error.response?.data?.message || '网络错误'))
     }
   }
@@ -300,7 +302,7 @@ export const EquipmentTypesPage: React.FC = () => {
         await loadChecklistTemplates(selectedType.id)
       }
     } catch (error: any) {
-      console.error('批量添加点检项失败:', error)
+      log.error('批量添加点检项失败', error)
       if (isValidationError(error)) {
         const { map, errors, traceId } = extractValidationErrors(error)
         showValidationSummary(errors.length, traceId)
@@ -329,7 +331,7 @@ export const EquipmentTypesPage: React.FC = () => {
       await equipmentApi.updateChecklistTemplate(selectedType.id, template.id, { itemName: itemName.trim() })
       await loadChecklistTemplates(selectedType.id) // 重新加载点检项
     } catch (error: any) {
-      console.error('更新点检项失败:', error)
+      log.error('更新点检项失败', error)
       if (isValidationError(error)) {
         const { map, errors, traceId } = extractValidationErrors(error)
         showValidationSummary(errors.length, traceId)
@@ -349,7 +351,7 @@ export const EquipmentTypesPage: React.FC = () => {
         await equipmentApi.deleteChecklistTemplate(selectedType.id, template.id)
         await loadChecklistTemplates(selectedType.id) // 重新加载点检项
       } catch (error: any) {
-        console.error('删除点检项失败:', error)
+        log.error('删除点检项失败', error)
         alert('删除失败: ' + (error.response?.data?.message || '网络错误'))
       }
     }

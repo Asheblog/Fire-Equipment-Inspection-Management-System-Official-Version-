@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { createLogger } from '@/lib/logger'
 import { persist } from 'zustand/middleware'
 import type { User, Factory, UserRole } from '@/types'
 
@@ -24,6 +25,8 @@ interface AuthState {
   isInspector: () => boolean
 }
 
+const log = createLogger('Auth')
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
@@ -36,17 +39,9 @@ export const useAuthStore = create<AuthState>()(
       
       // 登录操作
       login: (user, factory, token, refreshToken) => {
-        console.log('🔑 [AuthStore] login方法调用参数详情:', { 
-          user: user ? {
-            id: user.id,
-            username: user.username, 
-            role: user.role,  // 关键检查点！
-            factoryId: user.factoryId,
-            fullName: user.fullName
-          } : null,
-          factory: factory?.name || 'no factory', 
-          token: token ? `${token.substring(0, 20)}...` : 'missing',
-          refreshToken: refreshToken ? `${refreshToken.substring(0, 20)}...` : 'missing'
+        log.info('登录', {
+          user: user ? { id: user.id, username: user.username, role: user.role, factoryId: user.factoryId } : null,
+          factory: factory?.name,
         })
         
         set({
@@ -57,12 +52,7 @@ export const useAuthStore = create<AuthState>()(
           refreshToken
         })
         
-        console.log('✅ [AuthStore] 登录状态更新完成，当前状态:', {
-          isAuthenticated: true,
-          userRole: user?.role,
-          factoryId: user?.factoryId,
-          factoryName: factory?.name
-        })
+        log.debug('登录状态更新完成', { role: user?.role, factoryId: user?.factoryId })
       },
       
       // 登出操作
@@ -96,43 +86,9 @@ export const useAuthStore = create<AuthState>()(
       // 检查用户是否拥有指定角色
       hasRole: (role) => {
         const { user } = get()
-        
-        console.log('🎭 [AuthStore] hasRole权限检查:', {
-          user: user ? {
-            username: user.username,
-            role: user.role,
-            id: user.id,
-            factoryId: user.factoryId
-          } : null,
-          requiredRole: role,
-          requiredRoleType: Array.isArray(role) ? 'array' : 'single'
-        })
-        
-        if (!user) {
-          console.log('❌ [AuthStore] 无用户信息，权限检查失败')
-          return false
-        }
-        
-        let hasPermission = false
-        if (Array.isArray(role)) {
-          hasPermission = role.includes(user.role)
-          console.log('🔍 [AuthStore] 数组角色检查:', {
-            requiredRoles: role,
-            userRole: user.role,
-            includes: hasPermission,
-            result: hasPermission ? '✅ 匹配' : '❌ 不匹配'
-          })
-        } else {
-          hasPermission = user.role === role
-          console.log('🔍 [AuthStore] 单一角色检查:', {
-            requiredRole: role,
-            userRole: user.role,
-            equals: hasPermission,
-            result: hasPermission ? '✅ 匹配' : '❌ 不匹配'
-          })
-        }
-        
-        return hasPermission
+        if (!user) return false
+        if (Array.isArray(role)) return role.includes(user.role)
+        return user.role === role
       },
       
       // 检查用户是否能访问指定厂区的数据

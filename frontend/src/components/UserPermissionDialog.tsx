@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import { createLogger } from '@/lib/logger'
 import { permissionApi } from '@/api'
 import type { Permission, Role, UserPermission } from '@/api/permissions'
 import { Button } from '@/components/ui/button'
@@ -38,6 +39,7 @@ export const UserPermissionDialog: React.FC<UserPermissionDialogProps> = ({
   userName,
   onPermissionChange
 }) => {
+  const log = createLogger('UserPermDialog')
   const [userPermissions, setUserPermissions] = useState<UserPermission | null>(null)
   const [allRoles, setAllRoles] = useState<Role[]>([])
   const [allPermissions, setAllPermissions] = useState<Permission[]>([])
@@ -60,7 +62,7 @@ export const UserPermissionDialog: React.FC<UserPermissionDialogProps> = ({
       setAllRoles(rolesRes || [])
       setAllPermissions(permsRes || [])
     } catch (error) {
-      console.error('获取用户权限失败:', error)
+      log.error('获取用户权限失败', error)
       toast.error('获取权限信息失败')
     } finally {
       setLoading(false)
@@ -85,7 +87,7 @@ export const UserPermissionDialog: React.FC<UserPermissionDialogProps> = ({
       onPermissionChange?.()
       setReason('')
     } catch (error: any) {
-      console.error('分配角色失败:', error)
+      log.error('分配角色失败', error)
       if (isValidationError(error)) {
         const { map, errors, traceId } = extractValidationErrors(error)
         showValidationSummary(errors.length, traceId)
@@ -105,7 +107,7 @@ export const UserPermissionDialog: React.FC<UserPermissionDialogProps> = ({
       onPermissionChange?.()
       setReason('')
     } catch (error: any) {
-      console.error('撤销角色失败:', error)
+      log.error('撤销角色失败', error)
       if (isValidationError(error)) {
         const { map, errors, traceId } = extractValidationErrors(error)
         showValidationSummary(errors.length, traceId)
@@ -128,7 +130,7 @@ export const UserPermissionDialog: React.FC<UserPermissionDialogProps> = ({
       onPermissionChange?.()
       setReason('')
     } catch (error: any) {
-      console.error('授予权限失败:', error)
+      log.error('授予权限失败', error)
       if (isValidationError(error)) {
         const { map, errors, traceId } = extractValidationErrors(error)
         showValidationSummary(errors.length, traceId)
@@ -148,7 +150,7 @@ export const UserPermissionDialog: React.FC<UserPermissionDialogProps> = ({
       onPermissionChange?.()
       setReason('')
     } catch (error: any) {
-      console.error('撤销权限失败:', error)
+      log.error('撤销权限失败', error)
       if (isValidationError(error)) {
         const { map, errors, traceId } = extractValidationErrors(error)
         showValidationSummary(errors.length, traceId)

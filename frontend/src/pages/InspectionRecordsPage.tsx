@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { createLogger } from '@/lib/logger'
 import { format } from 'date-fns'
 import { zhCN } from 'date-fns/locale'
 import { CalendarIcon, Filter, Search, FileText, Eye } from 'lucide-react'
@@ -23,6 +24,8 @@ import { cn } from '@/lib/utils'
 import { formatQrCodeDisplay } from '@/utils/qrCode'
 import type { ColumnDef } from '@tanstack/react-table'
 import type { DateRange } from 'react-day-picker'
+
+const log = createLogger('InspectRecords')
 
 interface InspectionFilters {
   equipmentId?: number
@@ -120,7 +123,7 @@ export function InspectionRecordsPage() {
       if (error instanceof Error && error.name === 'AbortError') {
         return
       }
-      console.error('获取点检记录失败:', error)
+      log.error('获取点检记录失败', error)
     } finally {
       setLoading(false)
     }
@@ -151,7 +154,7 @@ export function InspectionRecordsPage() {
         }
       }
     } catch (error) {
-      console.error('加载筛选选项失败:', error)
+      log.error('加载筛选选项失败', error)
     }
   }
 
@@ -173,7 +176,7 @@ export function InspectionRecordsPage() {
         setDetailDialogOpen(true)
       }
     } catch (error) {
-      console.error('获取点检详情失败:', error)
+      log.error('获取点检详情失败', error)
     }
   }
 

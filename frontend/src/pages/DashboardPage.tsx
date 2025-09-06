@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { createLogger } from '@/lib/logger'
 import { reportApi } from '@/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -16,6 +17,7 @@ import {
 import type { DashboardData } from '@/types'
 
 export const DashboardPage: React.FC = () => {
+  const log = createLogger('Dashboard')
   
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<DashboardData | null>(null)
@@ -33,7 +35,7 @@ export const DashboardPage: React.FC = () => {
           setError(response.message || '加载失败')
         }
       } catch (err: any) {
-        console.error('加载数据看板失败:', err)
+        log.error('加载数据看板失败', err)
         setError(err.response?.data?.message || '加载失败')
       } finally {
         setLoading(false)

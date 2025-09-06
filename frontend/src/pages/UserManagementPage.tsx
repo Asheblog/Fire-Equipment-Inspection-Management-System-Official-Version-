@@ -3,6 +3,7 @@
  */
 
 import React, { useState, useEffect } from 'react'
+import { createLogger } from '@/lib/logger'
 import { useAuthStore } from '@/stores/auth'
 import { userApi, factoryApi } from '@/api'
 import type { User, Factory, UserStats, UserRole } from '@/types'
@@ -62,6 +63,7 @@ const roleColors = {
 }
 
 export const UserManagementPage: React.FC = () => {
+  const log = createLogger('UserMgmt')
   const { isSuperAdmin } = useAuthStore()
   const [users, setUsers] = useState<User[]>([])
   const [factories, setFactories] = useState<Factory[]>([])
@@ -125,7 +127,7 @@ export const UserManagementPage: React.FC = () => {
       setFactories(factoriesResponse.data || [])
       setStats(statsResponse.data)
     } catch (error) {
-      console.error('加载数据失败:', error)
+      log.error('加载数据失败', error)
       toast.error('加载数据失败')
     } finally {
       setLoading(false)
@@ -150,7 +152,7 @@ export const UserManagementPage: React.FC = () => {
       resetUserForm()
       loadData()
     } catch (error: any) {
-      console.error('创建用户失败:', error)
+      log.error('创建用户失败', error)
       if (isValidationError(error)) {
         const { map, errors, traceId } = extractValidationErrors(error)
         showValidationSummary(errors.length, traceId)
@@ -180,7 +182,7 @@ export const UserManagementPage: React.FC = () => {
       resetUserForm()
       loadData()
     } catch (error: any) {
-      console.error('更新用户失败:', error)
+      log.error('更新用户失败', error)
       if (isValidationError(error)) {
         const { map, errors, traceId } = extractValidationErrors(error)
         showValidationSummary(errors.length, traceId)
@@ -199,7 +201,7 @@ export const UserManagementPage: React.FC = () => {
       toast.success(`用户已${user.isActive ? '禁用' : '启用'}`)
       loadData()
     } catch (error: any) {
-      console.error('切换用户状态失败:', error)
+      log.error('切换用户状态失败', error)
       if (isValidationError(error)) {
         const { map, errors, traceId } = extractValidationErrors(error)
         showValidationSummary(errors.length, traceId)
@@ -221,7 +223,7 @@ export const UserManagementPage: React.FC = () => {
       setSelectedUser(null)
       setNewPassword('')
     } catch (error: any) {
-      console.error('重置密码失败:', error)
+      log.error('重置密码失败', error)
       if (isValidationError(error)) {
         const { map, errors, traceId } = extractValidationErrors(error)
         showValidationSummary(errors.length, traceId)
@@ -243,7 +245,7 @@ export const UserManagementPage: React.FC = () => {
       setSelectedUser(null)
       loadData()
     } catch (error: any) {
-      console.error('删除用户失败:', error)
+      log.error('删除用户失败', error)
       if (isValidationError(error)) {
         const { map, errors, traceId } = extractValidationErrors(error)
         showValidationSummary(errors.length, traceId)
@@ -271,7 +273,7 @@ export const UserManagementPage: React.FC = () => {
       const factoriesResponse = await factoryApi.getList()
       setFactories(factoriesResponse.data || [])
     } catch (error: any) {
-      console.error('创建厂区失败:', error)
+      log.error('创建厂区失败', error)
       if (isValidationError(error)) {
         const { map, errors, traceId } = extractValidationErrors(error)
         showValidationSummary(errors.length, traceId)
@@ -302,7 +304,7 @@ export const UserManagementPage: React.FC = () => {
       const factoriesResponse = await factoryApi.getList()
       setFactories(factoriesResponse.data || [])
     } catch (error: any) {
-      console.error('更新厂区失败:', error)
+      log.error('更新厂区失败', error)
       if (isValidationError(error)) {
         const { map, errors, traceId } = extractValidationErrors(error)
         showValidationSummary(errors.length, traceId)
@@ -327,7 +329,7 @@ export const UserManagementPage: React.FC = () => {
       const factoriesResponse = await factoryApi.getList()
       setFactories(factoriesResponse.data || [])
     } catch (error: any) {
-      console.error('删除厂区失败:', error)
+      log.error('删除厂区失败', error)
       if (isValidationError(error)) {
         const { map, errors, traceId } = extractValidationErrors(error)
         showValidationSummary(errors.length, traceId)

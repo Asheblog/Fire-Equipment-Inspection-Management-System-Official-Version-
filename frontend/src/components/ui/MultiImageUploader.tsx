@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react'
+import { createLogger } from '@/lib/logger'
 import { captureImageDirectly } from '@/utils/directCamera'
 import { uploadApi } from '@/api'
 import { AuthenticatedImage } from '@/components/AuthenticatedImage'
@@ -33,6 +34,7 @@ export const MultiImageUploader: React.FC<MultiImageUploaderProps> = ({
   disabled = false,
   className = ""
 }) => {
+  const log = createLogger('MultiImageUploader')
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
@@ -65,7 +67,7 @@ export const MultiImageUploader: React.FC<MultiImageUploaderProps> = ({
         setError(result.error || '拍照失败')
       }
     } catch (err) {
-      console.error('拍照失败:', err)
+      log.error('拍照失败', err)
       setError('拍照功能异常，请重试')
     } finally {
       setUploading(false)
@@ -104,7 +106,7 @@ export const MultiImageUploader: React.FC<MultiImageUploaderProps> = ({
       }
       
     } catch (err) {
-      console.error('上传失败:', err)
+      log.error('上传失败', err)
       setError('图片上传失败，请重试')
     } finally {
       setUploading(false)

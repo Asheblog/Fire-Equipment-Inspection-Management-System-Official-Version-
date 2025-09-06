@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { createLogger } from '@/lib/logger'
 import { useAuthStore } from '@/stores/auth'
 import { useParams, useNavigate } from 'react-router-dom'
 import { formatQrCodeDisplay } from '@/utils/qrCode'
@@ -62,6 +63,7 @@ interface EquipmentInspectionForm {
 }
 
 export const MobileInspectionPage: React.FC = () => {
+  const log = createLogger('MobileInspect')
   // 监听认证状态失效自动跳转
   const navigate = useNavigate()
   const { isAuthenticated } = useAuthStore()
@@ -109,7 +111,7 @@ export const MobileInspectionPage: React.FC = () => {
       try {
         setLoading(true)
         
-        console.log('📡 开始智能加载，先尝试位置API...')
+        log.debug('开始智能加载: 位置API')
         
         // 先尝试位置API，看看这个位置有多少器材
         try {
@@ -120,7 +122,7 @@ export const MobileInspectionPage: React.FC = () => {
             setLocationData(locationData)
             
             if (locationData.hasMultipleEquipments && locationData.equipmentCount > 1) {
-              console.log(`🏢 检测到多器材位置 (${locationData.equipmentCount}个器材)，启用多器材模式`)
+              log.debug('检测到多器材位置', { count: locationData.equipmentCount })
               setIsMultiEquipment(true)
               
               // 初始化多器材表单数据
@@ -142,7 +144,7 @@ export const MobileInspectionPage: React.FC = () => {
               setEquipmentForms(initialForms)
               
             } else {
-              console.log('🔧 检测到单器材位置，启用单器材模式')
+              log.debug('检测到单器材位置')
               setIsMultiEquipment(false)
               
               // 使用位置数据中的第一个器材作为单器材
@@ -163,7 +165,7 @@ export const MobileInspectionPage: React.FC = () => {
           }
           
         } catch (locationErr) {
-          console.log('⚠️ 位置API失败，回退到单器材模式')
+          log.warn('位置API失败，回退单器材模式')
           
           // 回退到原有的单器材逻辑
           const equipmentResponse = await equipmentApi.getByQR(decodeURIComponent(qrCode))
@@ -191,7 +193,7 @@ export const MobileInspectionPage: React.FC = () => {
         }
         
       } catch (err: any) {
-        console.error('加载数据失败:', err)
+        log.error('加载数据失败', err)
         setError(err.response?.data?.message || '加载数据失败')
       } finally {
         setLoading(false)
@@ -354,7 +356,7 @@ export const MobileInspectionPage: React.FC = () => {
       }
       
     } catch (err: any) {
-      console.error('❌ 提交点检记录失败:', err)
+      log.error('提交点检记录失败', err)
       if (isValidationError(err)) {
         const { map, errors, traceId } = extractValidationErrors(err)
         showValidationSummary(errors.length, traceId)

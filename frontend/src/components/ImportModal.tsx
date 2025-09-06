@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react'
+import { createLogger } from '@/lib/logger'
 import {
   Dialog,
   DialogContent,
@@ -61,6 +62,8 @@ export const ImportModal: React.FC<ImportModalProps> = ({
     }
   }, [open])
 
+  const log = createLogger('Import')
+
   const loadBaseData = async () => {
     setLoadingBaseData(true)
     try {
@@ -72,15 +75,15 @@ export const ImportModal: React.FC<ImportModalProps> = ({
       if (typesRes.success) {
         setEquipmentTypes(typesRes.data || [])
       } else {
-        console.error('获取器材类型失败:', typesRes.message)
+        log.warn('获取器材类型失败', typesRes.message)
       }
       if (factoriesRes.success) {
         setFactories(factoriesRes.data || [])
       } else {
-        console.error('获取厂区列表失败:', factoriesRes.message)
+        log.warn('获取厂区列表失败', factoriesRes.message)
       }
     } catch (error) {
-      console.error('加载基础数据失败:', error)
+      log.error('加载基础数据失败', error)
       alert('加载基础数据失败，请重试')
     } finally {
       setLoadingBaseData(false)
@@ -112,23 +115,12 @@ export const ImportModal: React.FC<ImportModalProps> = ({
       return
     }
 
-    console.log('=== 开始解析文件 ===')
-    console.log('文件信息:', {
-      name: file.name,
-      size: file.size,
-      type: file.type
-    })
-    console.log('基础数据状态:', {
-      equipmentTypesCount: equipmentTypes.length,
-      factoriesCount: factories.length,
-      equipmentTypes: equipmentTypes.map(t => ({ id: t.id, name: t.name })),
-      factories: factories.map(f => ({ id: f.id, name: f.name }))
-    })
+    log.info('开始解析文件', { name: file.name, size: file.size, type: file.type })
 
     setParsing(true)
     try {
       const rawData = await EquipmentImporter.parseFile(file)
-      console.log('原始Excel数据:', rawData)
+      log.debug('原始Excel数据(前6行)', rawData.slice(0, 6))
       
       if (rawData.length < 2) {
         throw new Error('文件数据不足，至少需要包含表头和一行数据')
@@ -136,21 +128,21 @@ export const ImportModal: React.FC<ImportModalProps> = ({
 
       // 检测列映射
       const headers = rawData[0] as string[]
-      console.log('Excel表头:', headers)
+      log.debug('Excel表头', headers)
       
       const mapping = EquipmentImporter.detectColumnMapping(headers)
-      console.log('列映射结果:', mapping)
+      log.debug('列映射结果', mapping)
       
       // 验证必填字段
       const mappingErrors = EquipmentImporter.validateRequiredFields(mapping)
-      console.log('必填字段验证:', mappingErrors)
+      log.debug('必填字段验证结果数', mappingErrors.length)
       
       if (mappingErrors.length > 0) {
         throw new Error(`列映射失败:\n${mappingErrors.join('\n')}`)
       }
 
       // 解析数据
-      console.log('开始解析器材数据...')
+      log.info('开始解析器材数据')
       const { success, errors } = EquipmentImporter.parseEquipmentData(
         rawData, 
         mapping, 
@@ -158,17 +150,13 @@ export const ImportModal: React.FC<ImportModalProps> = ({
         factories
       )
 
-      console.log('解析结果:', {
-        successCount: success.length,
-        errorsCount: errors.length,
-        successData: success,
-        errorData: errors
-      })
+      log.info('解析完成', { successCount: success.length, errorsCount: errors.length })
+      log.debug('解析错误前5条', errors.slice(0,5))
 
       setPreviewData({ success, errors, mapping })
       setStep('preview')
     } catch (error: any) {
-      console.error('文件解析失败:', error)
+      log.error('文件解析失败', error)
       if (isValidationError(error)) {
         const { map, errors, traceId } = extractValidationErrors(error)
         showValidationSummary(errors.length, traceId)
@@ -186,18 +174,16 @@ export const ImportModal: React.FC<ImportModalProps> = ({
   const handleImport = async () => {
     if (!previewData?.success.length) return
 
-    console.log('=== 开始批量导入 ===')
-    console.log('预览数据:', previewData)
+    log.info('开始批量导入', { total: previewData.success.length })
 
     setStep('importing')
     setImporting(true)
 
     try {
-      console.log('开始批量导入，原始数据:', previewData.success)
+      log.debug('批量导入原始数据前5条', previewData.success.slice(0,5))
       
       // 格式化数据以匹配后端期望的格式
-      const formattedEquipments = previewData.success.map((equipment, index) => {
-        console.log(`格式化器材 ${index + 1} - 输入:`, equipment)
+      const formattedEquipments = previewData.success.map((equipment) => {
         
         const formatted = {
           name: equipment.name,
@@ -210,27 +196,15 @@ export const ImportModal: React.FC<ImportModalProps> = ({
           // 如果没有指定厂区ID，使用默认值（后端会根据用户权限自动分配）
           factoryId: equipment.factoryId || undefined
         }
-        
-        console.log(`格式化器材 ${index + 1} - 输出:`, formatted)
-        console.log(`格式化器材 ${index + 1} - 字段检查:`, {
-          name: { value: formatted.name, type: typeof formatted.name, defined: formatted.name !== undefined },
-          typeId: { value: formatted.typeId, type: typeof formatted.typeId, defined: formatted.typeId !== undefined },
-          factoryId: { value: formatted.factoryId, type: typeof formatted.factoryId, defined: formatted.factoryId !== undefined },
-          location: { value: formatted.location, type: typeof formatted.location, defined: formatted.location !== undefined }
-        })
-        
         return formatted
       })
       
-      console.log('格式化后的批量导入数据:', formattedEquipments)
-      console.log('发送到API的完整请求:', {
-        equipments: formattedEquipments
-      })
+      log.debug('格式化完成数据前5条', formattedEquipments.slice(0,5))
       
       // 调用批量导入API
       const response = await equipmentApi.batchImport(formattedEquipments)
       
-      console.log('批量导入API响应:', response)
+      log.debug('批量导入API响应概览', { ok: response.success, successCount: response.data?.success?.length, failedCount: response.data?.failed?.length })
 
       if (response.success) {
         // 从后端响应中获取实际的成功/失败统计
@@ -246,7 +220,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
         throw new Error(response.message || '导入失败')
       }
     } catch (error: any) {
-      console.error('导入失败:', error)
+      log.error('导入失败', error)
       
       // 更详细的错误处理
       let errorMessage = '导入失败'

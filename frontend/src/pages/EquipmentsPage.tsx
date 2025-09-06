@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { createLogger } from '@/lib/logger'
 import { useAuthStore } from '@/stores/auth'
 import { useEquipmentStore } from '@/stores/equipment'
 import { equipmentApi } from '@/api'
@@ -185,6 +186,7 @@ const createColumns = (
 ]
 
 export const EquipmentsPage: React.FC = () => {
+  const log = createLogger('Equipments')
   const { isSuperAdmin } = useAuthStore()
   const { 
     equipments, 
@@ -224,7 +226,7 @@ export const EquipmentsPage: React.FC = () => {
         if (Array.isArray(items)) {
           setEquipments(items)
         } else {
-          console.warn('API响应中的items不是数组:', items)
+          log.warn('API响应 items 非数组', { raw: items })
           setEquipments([])
         }
       } else {
@@ -233,7 +235,7 @@ export const EquipmentsPage: React.FC = () => {
       }
       
     } catch (err: any) {
-      console.error('加载器材数据失败:', err)
+      log.error('加载器材数据失败', err)
       setError(err.response?.data?.message || '加载失败')
       setEquipments([]) // 确保出错时设置为空数组
     } finally {
@@ -255,7 +257,7 @@ export const EquipmentsPage: React.FC = () => {
         await equipmentApi.delete(equipment.id)
         await loadData() // 重新加载数据
       } catch (error: any) {
-        console.error('删除器材失败:', error)
+        log.error('删除器材失败', error)
         alert('删除失败: ' + (error.response?.data?.message || '网络错误'))
       }
     }

@@ -1,6 +1,9 @@
 import * as XLSX from 'xlsx'
 import { saveAs } from 'file-saver'
 import type { Equipment } from '@/types'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('Export')
 
 // 器材数据导出工具
 export class EquipmentExporter {
@@ -71,7 +74,7 @@ export class EquipmentExporter {
       
       return true
     } catch (error) {
-      console.error('导出Excel失败:', error)
+      log.error('导出Excel失败', error)
       throw new Error('导出Excel文件失败')
     }
   }
@@ -103,7 +106,7 @@ export class EquipmentExporter {
       
       return true
     } catch (error) {
-      console.error('导出CSV失败:', error)
+      log.error('导出CSV失败', error)
       throw new Error('导出CSV文件失败')
     }
   }
@@ -124,7 +127,7 @@ export class EquipmentExporter {
       
       return true
     } catch (error) {
-      console.error('导出JSON失败:', error)
+      log.error('导出JSON失败', error)
       throw new Error('导出JSON文件失败')
     }
   }

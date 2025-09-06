@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { createLogger } from '@/lib/logger'
 import { formatQrCodeDisplay } from '@/utils/qrCode'
 import { format } from 'date-fns'
 import { zhCN } from 'date-fns/locale'
@@ -27,6 +28,7 @@ interface InspectionDetail extends Omit<InspectionLog, 'checklistResults'> {
 }
 
 export function MobileInspectionRecordsPage() {
+  const log = createLogger('MobileInspectRec')
   const navigate = useNavigate()
   const [inspections, setInspections] = useState<InspectionLog[]>([])
   const [loading, setLoading] = useState(true)
@@ -50,7 +52,7 @@ export function MobileInspectionRecordsPage() {
         setInspections(response.data.items)
       }
     } catch (error) {
-      console.error('获取点检记录失败:', error)
+      log.error('获取点检记录失败', error)
     } finally {
       setLoading(false)
     }
@@ -69,7 +71,7 @@ export function MobileInspectionRecordsPage() {
         setDetailDialogOpen(true)
       }
     } catch (error) {
-      console.error('获取点检详情失败:', error)
+      log.error('获取点检详情失败', error)
     }
   }
 

@@ -1,4 +1,5 @@
 import React from 'react'
+import { createLogger } from '@/lib/logger'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/auth'
 import { QRCodeScanner } from '@/components/QRCodeScanner'
@@ -19,11 +20,12 @@ import {
 } from 'lucide-react'
 
 export const MobileDashboard: React.FC = () => {
+  const log = createLogger('MobileDash')
   const navigate = useNavigate()
   const { user, factory, logout } = useAuthStore()
 
   const handleScanSuccess = async (raw: string) => {
-    console.log('扫描成功原始值:', raw)
+    log.debug('扫描成功原始值', { raw })
     const code = extractQrCode(raw)
     try {
       // 可调用后端解析接口快速校验
@@ -31,17 +33,17 @@ export const MobileDashboard: React.FC = () => {
       if (resolve.success) {
         navigate(`/m/inspection/${encodeURIComponent(code)}`)
       } else {
-        console.warn('二维码未找到器材，仍跳转查看是否新增逻辑处理')
+        log.warn('二维码未找到关联器材')
         navigate(`/m/inspection/${encodeURIComponent(code)}`)
       }
     } catch (e) {
-      console.error('二维码识别失败:', e)
+      log.error('二维码识别失败', e)
       navigate(`/m/inspection/${encodeURIComponent(code)}`)
     }
   }
 
   const handleScanError = (error: string) => {
-    console.error('扫描错误:', error)
+    log.error('扫描错误', error)
   }
 
   const handleLogout = async () => {

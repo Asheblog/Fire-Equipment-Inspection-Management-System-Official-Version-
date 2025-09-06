@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
+import { createLogger } from '@/lib/logger'
 import { api } from '@/api/client'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 // 删除未使用的图标导入
@@ -16,6 +17,7 @@ interface AuthenticatedImageProps {
 }
 
 export function AuthenticatedImage({ src, alt = '', className = '', fallback, enableZoom = false, lazy = true, rootMargin = '100px', threshold = 0.1, priority = false }: AuthenticatedImageProps) {
+  const log = createLogger('AuthImage')
   const [imageSrc, setImageSrc] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
@@ -41,13 +43,13 @@ export function AuthenticatedImage({ src, alt = '', className = '', fallback, en
       if (uploadsIndex > -1) {
         const pathPart = decoded.substring(uploadsIndex)
         if (pathPart !== decoded) {
-          console.debug('[ImageNormalize] 纠正旧图片URL =>', decoded, '=>', pathPart)
+          log.debug('纠正旧图片URL', { from: decoded, to: pathPart })
         }
         return pathPart
       }
       // 过滤掉误存的 blob: 值（数据库里不该有）
       if (decoded.startsWith('blob:')) {
-        console.warn('[ImageNormalize] 检测到 blob: URL，无法直接请求', decoded)
+        log.warn('检测到 blob URL，无法请求', { value: decoded })
         return ''
       }
       return decoded
@@ -112,7 +114,7 @@ export function AuthenticatedImage({ src, alt = '', className = '', fallback, en
           setRetryCount(0) // 重置重试计数
         }
       } catch (err: any) {
-        console.error('加载认证图片失败:', err)
+        log.error('加载认证图片失败', err)
         
         if (isMounted && !abortControllerRef.current?.signal.aborted) {
           // 404错误不重试，其他错误可以重试

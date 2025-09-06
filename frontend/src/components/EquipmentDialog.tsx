@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { createLogger } from '@/lib/logger'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -86,6 +87,7 @@ export const EquipmentDialog: React.FC<EquipmentDialogProps> = ({
   equipment,
   onSuccess,
 }) => {
+  const log = createLogger('EquipmentDialog')
   const { factory } = useAuthStore()
   const [loading, setLoading] = useState(false)
   const [types, setTypes] = useState<EquipmentType[]>([])
@@ -115,7 +117,7 @@ export const EquipmentDialog: React.FC<EquipmentDialogProps> = ({
           setTypes(response.data)
         }
       } catch (error) {
-        console.error('加载器材类型失败:', error)
+        log.error('加载器材类型失败', error)
       } finally {
         setTypesLoading(false)
       }
@@ -175,7 +177,7 @@ export const EquipmentDialog: React.FC<EquipmentDialogProps> = ({
       onOpenChange(false)
       form.reset()
     } catch (error: any) {
-      console.error('保存器材失败:', error)
+      log.error('保存器材失败', error)
       if (isValidationError(error)) {
         const { errors, map, traceId } = extractValidationErrors(error)
         applyRHFBackendErrors(form, errors)

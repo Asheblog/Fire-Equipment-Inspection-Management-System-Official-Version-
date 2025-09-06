@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { createLogger } from '@/lib/logger'
 import { useAuthStore } from '@/stores/auth'
 import { issueApi } from '@/api'
 import { Button } from '@/components/ui/button'
@@ -138,6 +139,7 @@ const MyIssueCard: React.FC<MyIssueCardProps> = ({ issue, onView }) => {
 }
 
 const MyIssuesPage: React.FC = () => {
+  const log = createLogger('MyIssues')
   const { user } = useAuthStore()
   const [issues, setIssues] = useState<Issue[]>([])
   const [loading, setLoading] = useState(true)
@@ -169,9 +171,9 @@ const MyIssuesPage: React.FC = () => {
         ...(searchQuery && { search: searchQuery })
       }
 
-      console.log('🔧 [我的隐患] 请求参数:', params)
+      log.debug('我的隐患列表 发起请求', params)
       const response = await issueApi.getList(params)
-      console.log('🔧 [我的隐患] API响应:', response)
+      log.debug('我的隐患列表 响应', { ok: response.success, count: response.data?.items?.length })
 
       if (response?.data && Array.isArray(response.data.items)) {
         const { items, total, page: currentPage, pageSize, totalPages } = response.data
@@ -184,7 +186,7 @@ const MyIssuesPage: React.FC = () => {
         })
       }
     } catch (error) {
-      console.error('🔧 [我的隐患] ❌ 加载失败:', error)
+      log.error('我的隐患列表加载失败', error)
       setIssues([])
     } finally {
       setLoading(false)

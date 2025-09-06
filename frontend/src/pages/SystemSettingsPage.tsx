@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { createLogger } from '@/lib/logger'
 import { useAuthStore } from '@/stores/auth'
 import { api } from '@/api/client'
 import { PageContainer } from '@/components/layout/PageContainer'
@@ -31,6 +32,7 @@ interface SystemSettings {
 }
 
 export const SystemSettingsPage: React.FC = () => {
+  const log = createLogger('SysSettings')
   const { isSuperAdmin, token } = useAuthStore()
   const [settings, setSettings] = useState<SystemSettings>({
     systemName: '消防器材点检管理系统',
@@ -123,7 +125,7 @@ export const SystemSettingsPage: React.FC = () => {
           setSettings(prev => ({ ...prev, qrBaseUrl: data.data.qrBaseUrl ?? prev.qrBaseUrl }))
         }
       } catch (e: any) {
-        console.warn('加载系统设置失败:', e?.message || e)
+        log.warn('加载系统设置失败', e?.message || e)
       } finally {
         setIsLoadingSettings(false)
       }

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { createLogger } from '@/lib/logger'
 import { equipmentApi } from '@/api'
 import {
   Dialog,
@@ -22,6 +23,7 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({
   onClose,
   equipment
 }) => {
+  const log = createLogger('QRCodeModal')
   const [qrImageUrl, setQrImageUrl] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>('')
@@ -46,7 +48,7 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({
         setError('生成二维码失败')
       }
     } catch (err) {
-      console.error('生成二维码失败:', err)
+      log.error('生成二维码失败', err)
       setError('生成二维码失败，请稍后重试')
     } finally {
       setLoading(false)

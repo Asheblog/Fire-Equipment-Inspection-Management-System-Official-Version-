@@ -114,3 +114,5 @@ jest-coverage/
 .claude/
 .spec-workflow/
 bug.md
+opencode.json
+AGENTS.md

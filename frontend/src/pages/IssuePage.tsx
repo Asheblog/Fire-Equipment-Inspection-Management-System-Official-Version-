@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { createLogger } from '@/lib/logger'
 import { formatQrCodeDisplay } from '@/utils/qrCode'
 import { useAuthStore } from '@/stores/auth'
 import { useIssueStore } from '@/stores/issueStore'
@@ -159,6 +160,7 @@ const IssueCard: React.FC<IssueCardProps> = ({ issue, onView, onHandle, onAudit,
 }
 
 export const IssuePage: React.FC = () => {
+  const log = createLogger('Issue')
   const { user } = useAuthStore()
   const {
     issues,
@@ -196,9 +198,9 @@ export const IssuePage: React.FC = () => {
         params.status = status.toUpperCase()
       }
       
-      console.log('🔧 [前端调试] 发起API请求:', params)
+      log.debug('加载隐患列表 发起请求', params)
       const response = await issueApi.getList(params)
-      console.log('🔧 [前端调试] API响应:', response)
+      log.debug('加载隐患列表 响应', { ok: response.success, count: response.data?.items?.length })
       const { data } = response
       if (data && Array.isArray(data.items)) {
         setIssues(data.items)
@@ -210,7 +212,7 @@ export const IssuePage: React.FC = () => {
         })
       }
     } catch (error) {
-      console.error('🔧 [前端调试] ❌ 加载隐患列表失败:', error)
+      log.error('加载隐患列表失败', error)
     } finally {
       setLoading(false)
     }
@@ -247,7 +249,7 @@ export const IssuePage: React.FC = () => {
       resetForms()
       loadIssues(activeTab === 'all' ? undefined : activeTab.toUpperCase())
     } catch (error: any) {
-      console.error('处理隐患失败:', error)
+      log.error('处理隐患失败', error)
       if (isValidationError(error)) {
         const { map, errors, traceId } = extractValidationErrors(error)
         showValidationSummary(errors.length, traceId)
@@ -272,7 +274,7 @@ export const IssuePage: React.FC = () => {
       resetForms()
       loadIssues(activeTab === 'all' ? undefined : activeTab.toUpperCase())
     } catch (error: any) {
-      console.error('审核隐患失败:', error)
+      log.error('审核隐患失败', error)
       if (isValidationError(error)) {
         const { map, errors, traceId } = extractValidationErrors(error)
         showValidationSummary(errors.length, traceId)

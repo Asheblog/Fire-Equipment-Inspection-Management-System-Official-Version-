@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { createLogger } from '@/lib/logger'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,6 +9,7 @@ import { useAuthStore } from '@/stores/auth'
 import { Loader2, Shield } from 'lucide-react'
 
 export const LoginPage: React.FC = () => {
+  const log = createLogger('Login')
   const navigate = useNavigate()
   const location = useLocation()
   const { login } = useAuthStore()
@@ -46,17 +48,17 @@ export const LoginPage: React.FC = () => {
     setError('')
 
     try {
-      console.log('📡 [LoginPage] 发送登录请求:', formData)
+      log.debug('发送登录请求', { username: formData.username })
       const response = await authApi.login({
         username: formData.username,
         password: formData.password,
         rememberMe: formData.rememberMe
       })
-      console.log('📥 [LoginPage] 登录响应:', response)
+      log.debug('登录响应', { ok: response.success })
       
       if (response.success && response.data) {
         const { user, factory, accessToken, refreshToken } = response.data
-        console.log('📥 [LoginPage] 登录响应详细解析:', { 
+        log.debug('登录响应详细解析', { 
           user: user ? {
             id: user.id,
             username: user.username,
@@ -80,7 +82,7 @@ export const LoginPage: React.FC = () => {
             const tokenParts = accessToken.split('.')
             if (tokenParts.length === 3) {
               const payload = JSON.parse(atob(tokenParts[1]))
-              console.log('🎫 [LoginPage] JWT Token解析:', {
+              log.debug('JWT Token解析', {
                 userId: payload.userId,
                 username: payload.username,
                 role: payload.role,
@@ -91,7 +93,7 @@ export const LoginPage: React.FC = () => {
               })
             }
           } catch (err) {
-            console.error('❌ [LoginPage] JWT Token解析失败:', err)
+            log.warn('JWT Token解析失败', err)
           }
         }
         
@@ -99,7 +101,7 @@ export const LoginPage: React.FC = () => {
         const safeFactory = factory || { id: 0, name: '未知厂区', address: '', createdAt: '' }
         
         // 调用store的login方法，使用accessToken作为token参数
-        console.log('🔄 [LoginPage] 调用AuthStore.login方法')
+        log.debug('调用AuthStore.login')
         login(user, safeFactory, accessToken, refreshToken)
 
         // 保存/清除账号
@@ -111,14 +113,14 @@ export const LoginPage: React.FC = () => {
         
         // 等待一下，确保状态更新完成
         setTimeout(() => {
-          console.log('🔀 [LoginPage] 准备跳转到:', from)
+          log.debug('跳转目标', { from })
           navigate(from, { replace: true })
         }, 100)
       } else {
         setError(response.message || '登录失败')
       }
     } catch (err: any) {
-      console.error('Login error:', err)
+      log.error('登录失败', err)
       setError(
         err.response?.data?.message || 
         err.message || 

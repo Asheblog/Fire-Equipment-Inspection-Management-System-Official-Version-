@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { createLogger } from '@/lib/logger'
 import { useAuthStore } from '@/stores/auth'
 import { reportApi } from '@/api'
 import { Button } from '@/components/ui/button'
@@ -31,6 +32,7 @@ import {
 import type { MonthlyReport, ReportExportRequest } from '@/types'
 
 export const ReportsPage: React.FC = () => {
+  const log = createLogger('Reports')
   const { user } = useAuthStore()
   
   const [loading, setLoading] = useState(false)
@@ -60,7 +62,7 @@ export const ReportsPage: React.FC = () => {
         setError(response.message || '加载报表失败')
       }
     } catch (err: any) {
-      console.error('加载月度报表失败:', err)
+      log.error('加载月度报表失败', err)
       setError(err.response?.data?.message || '加载报表失败')
     } finally {
       setLoading(false)
@@ -93,7 +95,7 @@ export const ReportsPage: React.FC = () => {
         setError('导出失败: ' + (response.message || '未知错误'))
       }
     } catch (err: any) {
-      console.error('导出报表失败:', err)
+      log.error('导出报表失败', err)
       setError('导出失败: ' + (err.response?.data?.message || '网络错误'))
     } finally {
       setExporting(false)
@@ -115,7 +117,7 @@ export const ReportsPage: React.FC = () => {
         window.open(response.data.previewUrl, '_blank')
       }
     } catch (err: any) {
-      console.error('预览报表失败:', err)
+      log.error('预览报表失败', err)
       setError('预览失败: ' + (err.response?.data?.message || '网络错误'))
     } finally {
       setLoading(false)

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { createLogger } from '@/lib/logger'
 import {
   Dialog,
   DialogContent,
@@ -27,6 +28,7 @@ export const EquipmentTypeDialog: React.FC<EquipmentTypeDialogProps> = ({
   equipmentType,
   onSuccess
 }) => {
+  const log = createLogger('EquipTypeDialog')
   const [formData, setFormData] = useState({
     name: ''
   })
@@ -109,7 +111,7 @@ export const EquipmentTypeDialog: React.FC<EquipmentTypeDialogProps> = ({
         onSuccess()
       }
     } catch (error: any) {
-      console.error('操作失败:', error)
+      log.error('操作失败', error)
       if (isValidationError(error)) {
         const { map, errors, traceId } = extractValidationErrors(error)
         setErrors(prev => ({ ...prev, ...map }))

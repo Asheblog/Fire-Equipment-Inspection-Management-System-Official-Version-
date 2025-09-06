@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx'
 import type { Equipment } from '@/types'
+import { createLogger } from '@/lib/logger'
 
 // 器材数据导入工具
 export class EquipmentImporter {
@@ -70,92 +71,56 @@ export class EquipmentImporter {
    * 检测列名映射
    */
   static detectColumnMapping(headers: string[]): Record<string, number> {
-    console.log('=== 开始检测列映射 ===')
-    console.log('输入表头:', headers)
-    
+    const log = createLogger('ImportMap')
+    log.info('开始检测列映射', { headerCount: headers.length })
     const mapping: Record<string, number> = {}
     const usedColumns = new Set<number>()
-    
-    // 第一轮：优先处理名称字段（typeName, factoryName）
     const nameFields = ['typeName', 'factoryName']
     for (const field of nameFields) {
       const aliases = this.columnMapping[field]
-      console.log(`优先检测名称字段 "${field}", 别名:`, aliases)
-      
+      log.debug('名称字段候选', { field, aliases })
       for (let i = 0; i < headers.length; i++) {
         if (usedColumns.has(i)) continue
-        
         const header = headers[i]?.toString().trim()
-        if (header) {
-          console.log(`  检查表头 "${header}" (索引 ${i})`)
-          
-          // 检查完全匹配（忽略大小写）
-          const exactMatch = aliases.some(alias => {
-            const isMatch = header.toLowerCase() === alias.toLowerCase()
-            if (isMatch) console.log(`    ✅ 完全匹配: "${header}" === "${alias}"`)
-            return isMatch
-          })
-          
-          if (exactMatch) {
-            mapping[field] = i
-            usedColumns.add(i)
-            console.log(`  🎯 名称字段 "${field}" 映射到索引 ${i} (完全匹配)`)
-            break
-          }
+        if (!header) continue
+        log.debug('检查表头', { header, index: i })
+        const exactMatch = aliases.some(alias => {
+          const isMatch = header.toLowerCase() === alias.toLowerCase()
+          if (isMatch) log.debug('完全匹配', { header, alias })
+          return isMatch
+        })
+        if (exactMatch) {
+          mapping[field] = i
+          usedColumns.add(i)
+          log.debug('名称字段映射', { field, index: i })
+          break
         }
       }
     }
-    
-    // 第二轮：处理其他字段，但跳过已经被名称字段占用的列
-    const otherFields = Object.keys(this.columnMapping).filter(field => !nameFields.includes(field))
+    const otherFields = Object.keys(this.columnMapping).filter(f => !nameFields.includes(f))
     for (const field of otherFields) {
       const aliases = this.columnMapping[field]
-      console.log(`检测其他字段 "${field}", 别名:`, aliases)
-      
+      log.debug('检测字段', { field, aliases })
       for (let i = 0; i < headers.length; i++) {
-        if (usedColumns.has(i)) {
-          console.log(`  跳过已占用的索引 ${i}`)
-          continue
-        }
-        
+        if (usedColumns.has(i)) { log.debug('跳过已占用索引', { index: i }); continue }
         const header = headers[i]?.toString().trim()
-        if (header) {
-          console.log(`  检查表头 "${header}" (索引 ${i})`)
-          
-          // 首先检查完全匹配（忽略大小写）
-          const exactMatch = aliases.some(alias => {
-            const isMatch = header.toLowerCase() === alias.toLowerCase()
-            if (isMatch) console.log(`    ✅ 完全匹配: "${header}" === "${alias}"`)
-            return isMatch
-          })
-          
-          if (exactMatch) {
-            mapping[field] = i
-            usedColumns.add(i)
-            console.log(`  🎯 字段 "${field}" 映射到索引 ${i} (完全匹配)`)
-            break
-          }
-          
-          // 如果没有完全匹配，再检查包含关系
-          const containsMatch = aliases.some(alias => {
-            const isMatch = header.toLowerCase().includes(alias.toLowerCase()) ||
-                           alias.toLowerCase().includes(header.toLowerCase())
-            if (isMatch) console.log(`    ⚠️ 包含匹配: "${header}" ~= "${alias}"`)
-            return isMatch
-          })
-          
-          if (containsMatch) {
-            mapping[field] = i
-            usedColumns.add(i)
-            console.log(`  🎯 字段 "${field}" 映射到索引 ${i} (包含匹配)`)
-            break
-          }
-        }
+        if (!header) continue
+        log.debug('检查表头', { header, index: i })
+        const exactMatch = aliases.some(alias => {
+          const isMatch = header.toLowerCase() === alias.toLowerCase()
+          if (isMatch) log.debug('完全匹配', { header, alias })
+          return isMatch
+        })
+        if (exactMatch) { mapping[field] = i; usedColumns.add(i); log.debug('字段映射完全匹配', { field, index: i }); continue }
+        const partialMatch = aliases.some(alias => {
+          const isMatch = header.toLowerCase().includes(alias.toLowerCase()) || alias.toLowerCase().includes(header.toLowerCase())
+          if (isMatch) log.debug('包含匹配', { header, alias })
+          return isMatch
+        })
+        if (partialMatch) { mapping[field] = i; usedColumns.add(i); log.debug('字段映射包含匹配', { field, index: i }); continue }
       }
     }
-    
-    console.log('最终列映射结果:', mapping)
-    console.log('已使用的列索引:', Array.from(usedColumns))
+    log.info('列映射完成', { mapping })
     return mapping
   }
 
@@ -253,254 +218,116 @@ export class EquipmentImporter {
    * 解析器材数据
    */
   static parseEquipmentData(
-    rawData: any[][], 
+    rawData: any[][],
     mapping: Record<string, number>,
     equipmentTypes: Array<{ id: number, name: string }> = [],
     factories: Array<{ id: number, name: string }> = []
-  ): { 
-    success: Partial<Equipment>[], 
-    errors: Array<{ row: number, errors: string[] }> 
-  } {
-    console.log('=== 开始解析器材数据 ===')
-    console.log('原始数据行数:', rawData.length)
-    console.log('列映射:', mapping)
-    console.log('器材类型列表:', equipmentTypes)
-    console.log('厂区列表:', factories)
-    
+  ): { success: Partial<Equipment>[]; errors: Array<{ row: number; errors: string[] }> } {
+    const log = createLogger('ImportParse')
+    log.info('开始解析数据', { rows: rawData.length })
+    log.debug('解析上下文', { mapping, typeCount: equipmentTypes.length, factoryCount: factories.length })
     const success: Partial<Equipment>[] = []
-    const errors: Array<{ row: number, errors: string[] }> = []
-
-    // 跳过表头，从第二行开始处理
+    const errors: Array<{ row: number; errors: string[] }> = []
     for (let i = 1; i < rawData.length; i++) {
       const row = rawData[i]
       const rowErrors: string[] = []
-      
-      console.log(`\n--- 处理第 ${i + 1} 行 ---`)
-      console.log('原始行数据:', row)
-      
-      if (!row || row.every(cell => !cell)) {
-        console.log(`跳过空行: ${i + 1}`)
-        continue // 跳过空行
-      }
-
+      if (!row || row.every(cell => !cell)) { if (i < 10) log.debug('跳过空行', { rowIndex: i + 1 }); continue }
+      if (i < 5) log.debug('处理行', { rowIndex: i + 1, rowSample: row })
       try {
         const equipment: Partial<Equipment> = {}
-
-        // 器材名称（必填）
         if (mapping.name !== undefined) {
           const name = row[mapping.name]?.toString().trim()
-          console.log(`器材名称 (索引 ${mapping.name}):`, { raw: row[mapping.name], processed: name })
-          if (!name) {
-            rowErrors.push('器材名称不能为空')
-          } else if (name.length > 100) {
-            rowErrors.push('器材名称不能超过100个字符')
-          } else {
-            equipment.name = name
-          }
+          if (!name) rowErrors.push('器材名称不能为空')
+          else if (name.length > 100) rowErrors.push('器材名称不能超过100个字符')
+          else { equipment.name = name; if (i < 5) log.debug('器材名称', { value: name }) }
         }
-
-        // 安装位置（必填）
         if (mapping.location !== undefined) {
           const location = row[mapping.location]?.toString().trim()
-          console.log(`安装位置 (索引 ${mapping.location}):`, { raw: row[mapping.location], processed: location })
-          if (!location) {
-            rowErrors.push('安装位置不能为空')
-          } else if (location.length > 200) {
-            rowErrors.push('安装位置不能超过200个字符')
-          } else {
-            equipment.location = location
-          }
+          if (!location) rowErrors.push('安装位置不能为空')
+          else if (location.length > 200) rowErrors.push('安装位置不能超过200个字符')
+          else { equipment.location = location; if (i < 5) log.debug('安装位置', { value: location }) }
         }
-
-        // 规格型号（可选）
         if (mapping.specifications !== undefined) {
           const specifications = row[mapping.specifications]?.toString().trim()
-          console.log(`规格型号 (索引 ${mapping.specifications}):`, { raw: row[mapping.specifications], processed: specifications })
           if (specifications) {
-            if (specifications.length > 500) {
-              rowErrors.push('规格型号不能超过500个字符')
-            } else {
-              equipment.specifications = specifications
-            }
+            if (specifications.length > 500) rowErrors.push('规格型号不能超过500个字符')
+            else { equipment.specifications = specifications; if (i < 5) log.debug('规格型号', { value: specifications }) }
           }
         }
-
-        // 生产日期（必填）
         if (mapping.productionDate !== undefined) {
           const productionDateValue = row[mapping.productionDate]
-          console.log(`生产日期 (索引 ${mapping.productionDate}):`, { raw: productionDateValue })
+          if (i < 3) log.debug('生产日期原始值', { raw: productionDateValue })
           const { date: productionDate, error: prodError } = this.parseDate(productionDateValue, '生产日期')
-          if (prodError) {
-            rowErrors.push(prodError)
-          } else if (productionDate) {
-            equipment.productionDate = productionDate + 'T00:00:00.000Z'
-            console.log(`生产日期解析结果:`, equipment.productionDate)
-          }
+          if (prodError) rowErrors.push(prodError)
+          else if (productionDate) { equipment.productionDate = productionDate + 'T00:00:00.000Z'; if (i < 3) log.debug('生产日期解析', { parsed: equipment.productionDate }) }
         }
-
-        // 到期日期（必填）
         if (mapping.expiryDate !== undefined) {
           const expiryDateValue = row[mapping.expiryDate]
-          console.log(`到期日期 (索引 ${mapping.expiryDate}):`, { raw: expiryDateValue })
+          if (i < 3) log.debug('到期日期原始值', { raw: expiryDateValue })
           const { date: expiryDate, error: expError } = this.parseDate(expiryDateValue, '到期日期')
-          if (expError) {
-            rowErrors.push(expError)
-          } else if (expiryDate && equipment.productionDate) {
-            // 验证到期日期不能早于生产日期
+          if (expError) rowErrors.push(expError)
+          else if (expiryDate && equipment.productionDate) {
             const prodDate = new Date(equipment.productionDate)
             const expDate = new Date(expiryDate)
-            if (expDate <= prodDate) {
-              rowErrors.push('到期日期不能早于或等于生产日期')
-            } else {
-              equipment.expiryDate = expiryDate + 'T23:59:59.999Z'
-              console.log(`到期日期解析结果:`, equipment.expiryDate)
-            }
-          } else if (expiryDate) {
-            equipment.expiryDate = expiryDate + 'T23:59:59.999Z'
-            console.log(`到期日期解析结果:`, equipment.expiryDate)
-          }
+            if (expDate <= prodDate) rowErrors.push('到期日期不能早于或等于生产日期')
+            else { equipment.expiryDate = expiryDate + 'T23:59:59.999Z'; if (i < 3) log.debug('到期日期解析', { parsed: equipment.expiryDate }) }
+          } else if (expiryDate) { equipment.expiryDate = expiryDate + 'T23:59:59.999Z'; if (i < 3) log.debug('到期日期解析', { parsed: equipment.expiryDate }) }
         }
-
-        // 器材类型处理（通过ID或名称）
-        console.log('器材类型处理:', {
-          hasTypeId: mapping.typeId !== undefined,
-          hasTypeName: mapping.typeName !== undefined,
-          typeIdIndex: mapping.typeId,
-          typeNameIndex: mapping.typeName
-        })
-        
+        if (i === 1) log.debug('器材类型处理配置', { hasTypeId: mapping.typeId !== undefined, hasTypeName: mapping.typeName !== undefined })
         if (mapping.typeId !== undefined) {
           const typeIdValue = row[mapping.typeId]
-          console.log(`器材类型ID (索引 ${mapping.typeId}):`, { raw: typeIdValue })
           const typeId = parseInt(typeIdValue)
           if (!isNaN(typeId) && typeId > 0) {
-            // 验证类型ID是否存在
             if (equipmentTypes.length > 0) {
               const foundType = equipmentTypes.find(t => t.id === typeId)
-              if (foundType) {
-                equipment.typeId = typeId
-                console.log(`✅ 器材类型ID验证通过:`, foundType)
-              } else {
-                rowErrors.push(`器材类型ID ${typeId} 不存在`)
-              }
-            } else {
-              equipment.typeId = typeId
-            }
-          } else {
-            rowErrors.push('器材类型ID必须是正整数')
-          }
+              if (foundType) { equipment.typeId = typeId; if (i < 5) log.debug('类型ID验证通过', { id: typeId }) }
+              else rowErrors.push(`器材类型ID ${typeId} 不存在`)
+            } else equipment.typeId = typeId
+          } else rowErrors.push('器材类型ID必须是正整数')
         } else if (mapping.typeName !== undefined) {
           const typeName = row[mapping.typeName]?.toString().trim()
-          console.log(`器材类型名称 (索引 ${mapping.typeName}):`, { raw: row[mapping.typeName], processed: typeName })
           if (typeName) {
             if (equipmentTypes.length > 0) {
-              const foundType = equipmentTypes.find(t => 
-                t.name.toLowerCase() === typeName.toLowerCase()
-              )
-              if (foundType) {
-                // 传递器材类型名称给后端，让后端处理转换
-                equipment.typeId = typeName
-                console.log(`✅ 器材类型名称验证通过:`, foundType, `传递给后端: ${typeName}`)
-              } else {
-                rowErrors.push(`未找到器材类型: ${typeName}`)
-                console.log(`❌ 未找到器材类型: ${typeName}，可用类型:`, equipmentTypes.map(t => t.name))
-              }
-            } else {
-              // 没有类型列表时，直接传递类型名称给后端验证
-              equipment.typeId = typeName
-              console.log(`传递器材类型名称给后端验证: ${typeName}`)
-            }
-          } else {
-            rowErrors.push('器材类型不能为空')
-          }
+              const foundType = equipmentTypes.find(t => t.name.toLowerCase() === typeName.toLowerCase())
+              if (foundType) { equipment.typeId = typeName; if (i < 5) log.debug('类型名称验证通过', { name: typeName, mappedId: foundType.id }) }
+              else { rowErrors.push(`未找到器材类型: ${typeName}`); if (i < 5) log.warn('未找到器材类型', { input: typeName }) }
+            } else { equipment.typeId = typeName; if (i < 5) log.debug('类型名称待后端验证', { name: typeName }) }
+          } else rowErrors.push('器材类型不能为空')
         }
-
-        // 厂区处理（通过ID或名称，可选，通常由当前用户权限决定）
-        console.log('厂区处理:', {
-          hasFactoryId: mapping.factoryId !== undefined,
-          hasFactoryName: mapping.factoryName !== undefined,
-          factoryIdIndex: mapping.factoryId,
-          factoryNameIndex: mapping.factoryName
-        })
-        
+        if (i === 1) log.debug('厂区处理配置', { hasFactoryId: mapping.factoryId !== undefined, hasFactoryName: mapping.factoryName !== undefined })
         if (mapping.factoryId !== undefined) {
           const factoryIdValue = row[mapping.factoryId]
-          console.log(`厂区ID (索引 ${mapping.factoryId}):`, { raw: factoryIdValue })
           const factoryId = parseInt(factoryIdValue)
           if (!isNaN(factoryId) && factoryId > 0) {
             if (factories.length > 0) {
               const foundFactory = factories.find(f => f.id === factoryId)
-              if (foundFactory) {
-                equipment.factoryId = factoryId
-                console.log(`✅ 厂区ID验证通过:`, foundFactory)
-              } else {
-                rowErrors.push(`厂区ID ${factoryId} 不存在`)
-              }
-            } else {
-              equipment.factoryId = factoryId
-            }
+              if (foundFactory) { equipment.factoryId = factoryId; if (i < 5) log.debug('厂区ID验证通过', { id: factoryId }) }
+              else rowErrors.push(`厂区ID ${factoryId} 不存在`)
+            } else equipment.factoryId = factoryId
           }
         } else if (mapping.factoryName !== undefined) {
           const factoryName = row[mapping.factoryName]?.toString().trim()
-          console.log(`厂区名称 (索引 ${mapping.factoryName}):`, { raw: row[mapping.factoryName], processed: factoryName })
           if (factoryName && factories.length > 0) {
-            const foundFactory = factories.find(f => 
-              f.name.toLowerCase() === factoryName.toLowerCase()
-            )
-            if (foundFactory) {
-              equipment.factoryId = foundFactory.id
-              console.log(`✅ 厂区名称验证通过:`, foundFactory)
-            } else {
-              rowErrors.push(`未找到厂区: ${factoryName}`)
-              console.log(`❌ 未找到厂区: ${factoryName}，可用厂区:`, factories.map(f => f.name))
-            }
+            const foundFactory = factories.find(f => f.name.toLowerCase() === factoryName.toLowerCase())
+            if (foundFactory) { equipment.factoryId = foundFactory.id; if (i < 5) log.debug('厂区名称验证通过', { name: factoryName, id: foundFactory.id }) }
+            else { rowErrors.push(`未找到厂区: ${factoryName}`); if (i < 5) log.warn('未找到厂区', { input: factoryName }) }
           }
         }
-        // 注意：如果没有提供厂区信息，不设置factoryId，让后端根据用户权限自动分配
-
-        console.log('解析后的器材对象:', equipment)
-
-        // 检查是否有必填字段缺失
         if (!equipment.name) rowErrors.push('器材名称不能为空')
         if (!equipment.location) rowErrors.push('安装位置不能为空')
         if (!equipment.typeId) rowErrors.push('器材类型不能为空')
         if (!equipment.productionDate) rowErrors.push('生产日期不能为空')
         if (!equipment.expiryDate) rowErrors.push('到期日期不能为空')
-
-        console.log('字段验证结果:', {
-          hasName: !!equipment.name,
-          hasLocation: !!equipment.location,
-          hasTypeId: !!equipment.typeId,
-          hasProductionDate: !!equipment.productionDate,
-          hasExpiryDate: !!equipment.expiryDate,
-          errors: rowErrors
-        })
-
-        if (rowErrors.length === 0) {
-          success.push(equipment)
-          console.log(`✅ 第 ${i + 1} 行解析成功`)
-        } else {
-          errors.push({ row: i + 1, errors: rowErrors })
-          console.log(`❌ 第 ${i + 1} 行解析失败:`, rowErrors)
-        }
-      } catch (error) {
-        const errorMsg = `数据解析错误: ${(error as Error).message}`
-        errors.push({ 
-          row: i + 1, 
-          errors: [errorMsg] 
-        })
-        console.error(`❌ 第 ${i + 1} 行解析异常:`, error)
+        if (i < 5) log.debug('字段验证结果', { errors: rowErrors.length })
+        if (rowErrors.length === 0) { success.push(equipment); if (i < 20) log.debug('行解析成功', { row: i + 1 }) }
+        else { errors.push({ row: i + 1, errors: rowErrors }); if (i < 20) log.debug('行解析失败', { row: i + 1, errors: rowErrors }) }
+      } catch (err) {
+        const errorMsg = `数据解析错误: ${(err as Error).message}`
+        errors.push({ row: i + 1, errors: [errorMsg] })
+        if (i < 20) log.error('行解析异常', { row: i + 1, error: err })
       }
     }
-
-    console.log('=== 器材数据解析完成 ===')
-    console.log('解析结果:', {
-      successCount: success.length,
-      errorCount: errors.length,
-      successData: success,
-      errorData: errors
-    })
-
+    log.info('解析完成', { successCount: success.length, errorCount: errors.length })
     return { success, errors }
   }
 

@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { createLogger } from '@/lib/logger'
 import {
   Dialog,
   DialogContent,
@@ -29,6 +30,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   onClose,
   equipments
 }) => {
+  const log = createLogger('ExportModal')
   const [exporting, setExporting] = useState(false)
   const [exportType, setExportType] = useState<'excel' | 'csv' | 'json'>('excel')
 
@@ -45,7 +47,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       await EquipmentExporter.exportByType(equipments, exportType)
       onClose()
     } catch (error) {
-      console.error('导出失败:', error)
+      log.error('导出失败', error)
       alert('导出失败: ' + (error as Error).message)
     } finally {
       setExporting(false)
