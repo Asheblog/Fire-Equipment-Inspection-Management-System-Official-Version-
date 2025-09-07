@@ -20,6 +20,7 @@ import { MobileInspectionPage } from '@/pages/mobile/MobileInspectionPage'
 import { MobileInspectionSuccessPage } from '@/pages/mobile/MobileInspectionSuccessPage'
 import { MobileInspectionRecordsPage } from '@/pages/mobile/MobileInspectionRecordsPage'
 import { UserRole } from '@/types'
+import CameraDemoPage from '@/pages/CameraDemoPage'
 
 function App() {
   return (
@@ -192,6 +193,18 @@ function App() {
         <Route 
           path="/" 
           element={<MobileRedirectRoute />} 
+        />
+        
+        {/* 摄像头拍照演示页 */}
+        <Route 
+          path="/camera-demo" 
+          element={
+            <ProtectedRoute>
+              <AppLayout>
+                <CameraDemoPage />
+              </AppLayout>
+            </ProtectedRoute>
+          } 
         />
         
         {/* 404处理 */}

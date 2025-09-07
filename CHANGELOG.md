@@ -81,6 +81,34 @@
     - 检查策略：从检查dist目录改为检查最终输出文件
     - 配置适配：匹配 `vite.config.ts` 中的 `outDir: '../backend/public'`
 
+### 📷 移动端相机拍照组件重构（iOS 兼容 & 交互提升）
+
+- 全量替换旧拍照实现，引入 `NewCameraCapture` 分层（constraints / deviceManager / streamSession / frameProcessor / errors / types），状态机：idle → requesting → starting → stabilizing → ready → error → destroyed。
+- iOS 适配与稳定：
+  - 移除旧实现依赖的全局 FIRST_CAPTURE_PROFILE / CSS rotate 方案，预览保持原生方向，真正的旋转与裁剪在 `capture()` 像素级完成，避免比例错乱与首帧抖动。
+  - 多帧稳定策略：连续 N (默认3) 帧同尺寸才进入 ready；超时(1500ms) fallback 仍进入 ready 并记录稳定帧数。
+  - 解决 videoWidth / videoHeight 在 iOS 初期跳变导致的比例漂移。
+- 并发与竞态修复：
+  - 增加 `startSeqRef` 序列号丢弃过期异步启动结果，防止快速重复点击或权限弹窗导致旧流覆盖新流。
+  - 移除双重 `getUserMedia`（预检测不再主动取流），避免 iOS 权限弹窗 + 双调用黑屏/卡死。
+  - `onStateChange` 订阅立即回放当前状态，避免订阅时已越过 starting → stabilizing 导致 UI 永远“请求中”。
+  - 加入 2s watchdog：若仍停留在 requesting/starting 且未挂载 <video>，提示需要用户手势（避免静默卡死）。
+- React 运行时错误修复：
+  - 修复无限重启导致的 `Maximum update depth exceeded`：自动启动 effect 依赖裁剪，仅随 `autoStart` 变化执行一次。
+  - 修复 `removeChild NotFoundError`：将 `<video>` 挂载容器与占位/调试节点分离，避免手动 `innerHTML = ''` 与 React 卸载冲突。
+- 交互与防抖：
+  - 新增拍照成功即时反馈：中央绿色“已拍摄”浮层（1.2s 自动消失）+ 按钮文字切换为“已拍摄”并进入 2s 冷却期，防止用户因无感知连点。
+  - 拍照中 `capturing` 状态禁用按钮；冷却中 `cooldown` 状态禁用再次触发。
+- 代码健壮性：
+  - `sessionRef` 由 Promise 改为直接对象，销毁时无需等待异步链。
+  - 销毁会话前清理旧 video 元素，防止隐式多 track 占用。
+  - 统一错误码：PermissionDenied / NotSupported / ConstraintFailed / StabilizationTimeout / StreamEnded / CaptureInterrupted / Unknown。
+- 使用指引：
+  - 父组件可传 `debug` 以查看 `[NewCameraCapture] startSession attempt` / `[state]` 日志及稳定帧计数。
+  - 若需非连续拍摄，可设 `continuous={false}`：每次拍完自动销毁并提示再次“开启摄像头”。
+  - 现有 `onCapture(file, meta)` 不变；`meta` 含稳定帧数、旋转角度、最终宽高、裁剪信息，可用于后端校验与调试。
+- 后续可选（暂未实现，保留扩展点）：快门音 / 轻微闪屏 / 自增序号 meta / 前后摄快速切换 restart API。
+
 ### 🚀 新增功能
 
 - **新增 PM2 一键启动脚本 `start-pm2.js`**

@@ -5,7 +5,8 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { formatQrCodeDisplay } from '@/utils/qrCode'
 import { equipmentApi, inspectionApi } from '@/api'
 import { isValidationError, extractValidationErrors, showValidationSummary, focusFirstError } from '@/utils/validation'
-import { MultiImageUploader } from '@/components/ui/MultiImageUploader'
+import MultiCameraCapture from '@/components/MultiCameraCapture'
+import { useUploadPhoto } from '@/hooks/useUploadPhoto'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -109,6 +110,7 @@ export const MobileInspectionPage: React.FC = () => {
   const [issueDescription, setIssueDescription] = useState('')
   // 多图片支持
   const [issueImages, setIssueImages] = useState<string[]>([])
+  const { upload: uploadPhoto } = useUploadPhoto()
 
   // 多器材模式状态
   const [equipmentForms, setEquipmentForms] = useState<Record<number, EquipmentInspectionForm>>({})
@@ -660,20 +662,27 @@ export const MobileInspectionPage: React.FC = () => {
                 </div>
 
                 {/* 现场照片上传 */}
-                <MultiImageUploader
-                  images={form?.inspectionImages || []}
-                  onImagesChange={(images) => setEquipmentForms(prev => ({
-                    ...prev,
-                    [equipment.id]: {
-                      ...prev[equipment.id],
-                      inspectionImages: images
-                    }
-                  }))}
-                  title="现场照片"
-                  description="请拍摄器材现场照片，最多9张"
-                  required={true}
-                  maxImages={9}
-                />
+                <div className="space-y-4">
+                  <MultiCameraCapture
+                    title="现场照片(拍照)"
+                    max={9}
+                    initial={form?.inspectionImages || []}
+                    upload={async (file) => {
+                      const res: any = await uploadPhoto(file)
+                      return { fileUrl: res.data?.fileUrl || res.fileUrl, fileName: res.data?.fileName }
+                    }}
+                    onChange={(urls) => setEquipmentForms(prev => ({
+                      ...prev,
+                      [equipment.id]: {
+                        ...prev[equipment.id],
+                        inspectionImages: urls
+                      }
+                    }))}
+                    description="点击格子拍照，自动上传；可删除后重拍"
+                    required
+                  />
+                  {/* 已移除旧版相册补充组件，必要时再单独添加 */}
+                </div>
 
                 {/* 异常情况处理 */}
                 {hasAbnormal && (
@@ -702,20 +711,27 @@ export const MobileInspectionPage: React.FC = () => {
                     </div>
 
                     <div>
-                      <MultiImageUploader
-                        images={form?.issueImages || []}
-                        onImagesChange={(images) => setEquipmentForms(prev => ({
-                          ...prev,
-                          [equipment.id]: {
-                            ...prev[equipment.id],
-                            issueImages: images
-                          }
-                        }))}
-                        title="异常照片"
-                        description="请拍摄异常现象照片，最多9张"
-                        required={true}
-                        maxImages={9}
-                      />
+                      <div className="space-y-4">
+                        <MultiCameraCapture
+                          title="异常照片(拍照)"
+                          max={9}
+                          initial={form?.issueImages || []}
+                          upload={async (file) => {
+                            const res: any = await uploadPhoto(file)
+                            return { fileUrl: res.data?.fileUrl || res.fileUrl, fileName: res.data?.fileName }
+                          }}
+                          onChange={(urls) => setEquipmentForms(prev => ({
+                            ...prev,
+                            [equipment.id]: {
+                              ...prev[equipment.id],
+                              issueImages: urls
+                            }
+                          }))}
+                          description="拍摄异常细节，可多张"
+                          required
+                        />
+                        {/* 已移除旧版异常相册补充组件 */}
+                      </div>
                     </div>
                   </div>
                 )}
@@ -781,14 +797,21 @@ export const MobileInspectionPage: React.FC = () => {
         {!isMultiEquipment && (
           <Card>
             <CardContent className="space-y-4 pt-6">
-              <MultiImageUploader
-                images={inspectionImages}
-                onImagesChange={setInspectionImages}
-                title="现场照片"
-                description="请拍摄器材现场照片，最多9张"
-                required={true}
-                maxImages={9}
-              />
+              <div className="space-y-4">
+                <MultiCameraCapture
+                  title="现场照片(拍照)"
+                  max={9}
+                  initial={inspectionImages}
+                  upload={async (file) => {
+                    const res: any = await uploadPhoto(file)
+                    return { fileUrl: res.data?.fileUrl || res.fileUrl, fileName: res.data?.fileName }
+                  }}
+                  onChange={setInspectionImages}
+                  description="点击拍照格进行现场拍摄"
+                  required
+                />
+                {/* 已移除单器材模式相册补充组件 */}
+              </div>
             </CardContent>
           </Card>
         )}
@@ -816,14 +839,21 @@ export const MobileInspectionPage: React.FC = () => {
               </div>
 
               <div>
-                <MultiImageUploader
-                  images={issueImages}
-                  onImagesChange={setIssueImages}
-                  title="异常照片"
-                  description="请拍摄异常现象照片，最多9张"
-                  required={true}
-                  maxImages={9}
+              <div className="space-y-4">
+                <MultiCameraCapture
+                  title="异常照片(拍照)"
+                  max={9}
+                  initial={issueImages}
+                  upload={async (file) => {
+                    const res: any = await uploadPhoto(file)
+                    return { fileUrl: res.data?.fileUrl || res.fileUrl, fileName: res.data?.fileName }
+                  }}
+                  onChange={setIssueImages}
+                  description="拍摄异常部位/细节"
+                  required
                 />
+                {/* 已移除单器材模式异常相册补充组件 */}
+              </div>
               </div>
             </CardContent>
           </Card>
