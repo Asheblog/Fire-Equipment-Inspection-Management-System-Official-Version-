@@ -293,8 +293,18 @@ class InspectionService {
 
       const pages = Math.ceil(total / limit);
 
+      // 归一化多图片字段（列表接口补齐与详情接口一致）
+      const normalizedInspections = inspections.map(item => {
+        const inspectionImages = ImageHelper.extractImages(item, 'inspectionImageUrls', 'inspectionImageUrl');
+        return {
+          ...item,
+            inspectionImages,
+          inspectionImageUrl: item.inspectionImageUrl || inspectionImages[0] || null
+        };
+      });
+
       return {
-        inspections,
+        inspections: normalizedInspections,
         pagination: {
           total,
           page,
@@ -374,7 +384,25 @@ class InspectionService {
         throw new Error('无权查看该点检记录');
       }
 
-      return inspection;
+      // 归一化图片字段（保持与列表一致）
+      const inspectionImages = ImageHelper.extractImages(inspection, 'inspectionImageUrls', 'inspectionImageUrl');
+      const issueImages = inspection.issue ? ImageHelper.extractImages(inspection.issue, 'issueImageUrls', 'issueImageUrl') : [];
+      const fixedImages = inspection.issue ? ImageHelper.extractImages(inspection.issue, 'fixedImageUrls', 'fixedImageUrl') : [];
+
+      // 调试日志（DEBUG_IMAGES）已移除，保持生产输出整洁
+
+      return {
+        ...inspection,
+        inspectionImages,
+        inspectionImageUrl: inspection.inspectionImageUrl || inspectionImages[0] || null,
+        issue: inspection.issue ? {
+          ...inspection.issue,
+          issueImages,
+          fixedImages,
+          issueImageUrl: inspection.issue.issueImageUrl || issueImages[0] || null,
+          fixedImageUrl: inspection.issue.fixedImageUrl || fixedImages[0] || null
+        } : null
+      };
     } catch (error) {
       console.error('获取点检记录详情失败:', error);
       throw error;

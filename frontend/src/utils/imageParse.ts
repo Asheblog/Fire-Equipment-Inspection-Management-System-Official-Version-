@@ -17,9 +17,12 @@ export function parseImageList(source: any, opts: ParseOptions): string[] {
       if (filtered.length) return filtered
     } else if (typeof val === 'string') {
       try {
-        const arr = JSON.parse(val)
-        if (Array.isArray(arr)) {
-          const filtered = arr.filter(Boolean)
+        let parsed: any = JSON.parse(val)
+        if (typeof parsed === 'string') { // 双层序列化场景
+          try { parsed = JSON.parse(parsed) } catch (_) { /* ignore */ }
+        }
+        if (Array.isArray(parsed)) {
+          const filtered = parsed.filter(Boolean)
           if (filtered.length) return filtered
         }
       } catch (_) {/* ignore */}
@@ -40,4 +43,3 @@ export const parseIssueImages = (issue: any) =>
 
 export const parseFixedImages = (issue: any) =>
   parseImageList(issue, { arrayFields: ['fixedImages', 'fixedImageUrls'], singleFallback: 'fixedImageUrl' })
-

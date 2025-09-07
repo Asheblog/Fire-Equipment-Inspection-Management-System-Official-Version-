@@ -201,15 +201,24 @@ class IssueService {
 
       const pages = Math.ceil(total / limit);
 
-      // 计算隐患处理时效
-      const processedIssues = issues.map(issue => ({
-        ...issue,
-        daysOpen: Math.floor((Date.now() - issue.createdAt.getTime()) / (24 * 60 * 60 * 1000)),
-        processingTime: issue.handledAt 
-          ? Math.floor((issue.handledAt.getTime() - issue.createdAt.getTime()) / (24 * 60 * 60 * 1000))
-          : null,
-        severity: this.calculateIssueSeverity(issue)
-      }));
+      // 计算隐患处理时效 & 归一化多图片字段（与详情接口保持一致结构）
+      const processedIssues = issues.map(issue => {
+        const issueImages = ImageHelper.extractImages(issue, 'issueImageUrls', 'issueImageUrl');
+        const fixedImages = ImageHelper.extractImages(issue, 'fixedImageUrls', 'fixedImageUrl');
+        return {
+          ...issue,
+          issueImages,
+          fixedImages,
+          // 单图片字段向下兼容（若旧字段为空则从数组首图补齐）
+          issueImageUrl: issue.issueImageUrl || issueImages[0] || null,
+          fixedImageUrl: issue.fixedImageUrl || fixedImages[0] || null,
+          daysOpen: Math.floor((Date.now() - issue.createdAt.getTime()) / (24 * 60 * 60 * 1000)),
+          processingTime: issue.handledAt
+            ? Math.floor((issue.handledAt.getTime() - issue.createdAt.getTime()) / (24 * 60 * 60 * 1000))
+            : null,
+          severity: this.calculateIssueSeverity(issue)
+        };
+      });
 
       const result = {
         issues: processedIssues,
@@ -308,16 +317,19 @@ class IssueService {
         throw new Error('无权查看该隐患');
       }
 
+      const issueImages = ImageHelper.extractImages(issue, 'issueImageUrls', 'issueImageUrl');
+      const fixedImages = ImageHelper.extractImages(issue, 'fixedImageUrls', 'fixedImageUrl');
+
+      // 调试日志（DEBUG_IMAGES）已移除
+
       return {
         ...issue,
-        // 图片字段处理 - 优先返回数组格式，回退到单图片字段
-        issueImages: ImageHelper.extractImages(issue, 'issueImageUrls', 'issueImageUrl'),
-        fixedImages: ImageHelper.extractImages(issue, 'fixedImageUrls', 'fixedImageUrl'),
-        // 保持向下兼容 - 继续提供单图片字段
-        issueImageUrl: ImageHelper.extractImages(issue, 'issueImageUrls', 'issueImageUrl')[0] || null,
-        fixedImageUrl: ImageHelper.extractImages(issue, 'fixedImageUrls', 'fixedImageUrl')[0] || null,
+        issueImages,
+        fixedImages,
+        issueImageUrl: issue.issueImageUrl || issueImages[0] || null,
+        fixedImageUrl: issue.fixedImageUrl || fixedImages[0] || null,
         daysOpen: Math.floor((Date.now() - issue.createdAt.getTime()) / (24 * 60 * 60 * 1000)),
-        processingTime: issue.handledAt 
+        processingTime: issue.handledAt
           ? Math.floor((issue.handledAt.getTime() - issue.createdAt.getTime()) / (24 * 60 * 60 * 1000))
           : null,
         severity: this.calculateIssueSeverity(issue)

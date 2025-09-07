@@ -16,6 +16,7 @@ import {
 import { ChevronDown } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -37,6 +38,8 @@ interface DataTableProps<TData, TValue> {
   data: TData[]
   searchKey?: string
   searchPlaceholder?: string
+  enableSelection?: boolean // 是否显示多选列
+  onSelectionChange?: (rows: TData[]) => void
 }
 
 export function DataTable<TData, TValue>({
@@ -44,15 +47,42 @@ export function DataTable<TData, TValue>({
   data = [],
   searchKey = "name",
   searchPlaceholder = "搜索...",
+  enableSelection = false,
+  onSelectionChange
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([])
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
   const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({})
   const [rowSelection, setRowSelection] = React.useState({})
 
+  const selectionColumn: ColumnDef<TData, any> | null = enableSelection ? {
+    id: '__select',
+    header: ({ table }) => (
+      <Checkbox
+        checked={table.getIsAllPageRowsSelected() || (table.getIsSomePageRowsSelected() && 'indeterminate')}
+        onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+        aria-label="选择全部"
+      />
+    ),
+    cell: ({ row }) => (
+      <Checkbox
+        checked={row.getIsSelected()}
+        onCheckedChange={(value) => row.toggleSelected(!!value)}
+        aria-label="选择行"
+      />
+    ),
+    size: 32,
+    enableSorting: false,
+    enableHiding: false
+  } : null;
+
+  const finalColumns = React.useMemo(() => {
+    return selectionColumn ? [selectionColumn, ...columns] : columns;
+  }, [selectionColumn, columns]);
+
   const table = useReactTable({
     data,
-    columns,
+    columns: finalColumns,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     getCoreRowModel: getCoreRowModel(),
@@ -68,6 +98,13 @@ export function DataTable<TData, TValue>({
       rowSelection,
     },
   })
+
+  React.useEffect(() => {
+    if (onSelectionChange) {
+      const selected = table.getSelectedRowModel().rows.map(r => r.original as TData);
+      onSelectionChange(selected);
+    }
+  }, [rowSelection, table, onSelectionChange]);
 
   return (
     <div className="w-full">
@@ -158,10 +195,12 @@ export function DataTable<TData, TValue>({
         </Table>
       </div>
       <div className="flex items-center justify-end space-x-2 py-4">
-        <div className="flex-1 text-sm text-muted-foreground">
-          已选择 {table.getFilteredSelectedRowModel().rows.length} / {" "}
-          {table.getFilteredRowModel().rows.length} 条记录
-        </div>
+        {enableSelection && (
+          <div className="flex-1 text-sm text-muted-foreground">
+            已选择 {table.getFilteredSelectedRowModel().rows.length} /{" "}
+            {table.getFilteredRowModel().rows.length} 条记录
+          </div>
+        )}
         <div className="space-x-2">
           <Button
             variant="outline"

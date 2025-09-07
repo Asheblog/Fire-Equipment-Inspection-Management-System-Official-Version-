@@ -508,7 +508,13 @@ class QRCodeGenerator {
     }
     
     const baseUrl = this.getBaseURL();
-    return `${baseUrl}/m/inspection/${codeString}`;
+    let full = `${baseUrl}/m/inspection/${codeString}`;
+    // 动态 HTTPS 强化：若运行期检测到前端通过代理使用 https，可通过环境变量或 header 触发；
+    // 这里仅在 FORCE_HTTPS/ALWAYS_HTTPS 下做兜底（其余位置在控制器内根据请求协议再二次修正）。
+    if ((process.env.FORCE_HTTPS === 'true' || process.env.ALWAYS_HTTPS === 'true') && full.startsWith('http://')) {
+      full = full.replace('http://', 'https://');
+    }
+    return full;
   }
 
   /**

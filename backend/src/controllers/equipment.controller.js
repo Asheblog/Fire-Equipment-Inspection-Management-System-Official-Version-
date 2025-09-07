@@ -104,11 +104,7 @@ class EquipmentController {
       }
 
       const userFactoryId = dataFilter ? dataFilter.factoryId : null;
-      const equipment = await this.equipmentService.getEquipmentByQR(
-        qrCode,
-        userFactoryId
-      );
-
+      const equipment = await this.equipmentService.getEquipmentByQR(qrCode, userFactoryId);
       return ResponseHelper.success(res, equipment, '器材信息获取成功');
     } catch (error) {
       console.error('根据二维码获取器材失败:', error);
@@ -139,11 +135,7 @@ class EquipmentController {
       }
 
       const userFactoryId = dataFilter ? dataFilter.factoryId : null;
-      const locationData = await this.equipmentService.getEquipmentsByLocation(
-        qrCode,
-        userFactoryId
-      );
-
+      const locationData = await this.equipmentService.getEquipmentsByLocation(qrCode, userFactoryId);
       return ResponseHelper.success(res, locationData, '位置器材信息获取成功');
     } catch (error) {
       console.error('根据位置获取器材列表失败:', error);

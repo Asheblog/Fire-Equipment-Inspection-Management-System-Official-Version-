@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { DataTable } from '@/components/DataTable'
+import { EquipmentQRBatchPrint } from '@/components/EquipmentQRBatchPrint'
 import { EquipmentDialog } from '@/components/EquipmentDialog'
 import { QRCodeModal } from '@/components/QRCodeModal'
 import { ExportModal } from '@/components/ExportModal'
@@ -285,6 +286,8 @@ export const EquipmentsPage: React.FC = () => {
   }
 
   const columns = createColumns(handleEdit, handleDelete, handleViewQR)
+  const [selected, setSelected] = useState<Equipment[]>([])
+  const [batchPrintOpen, setBatchPrintOpen] = useState(false)
 
   // 统计数据 - 添加空值检查
   const stats = {
@@ -398,17 +401,27 @@ export const EquipmentsPage: React.FC = () => {
               <Plus className="h-4 w-4" />
               <span>添加器材</span>
             </Button>
-            
             <Button variant="outline" onClick={handleImport} className="flex items-center space-x-2">
               <Upload className="h-4 w-4" />
               <span>批量导入</span>
             </Button>
+            <Button
+              variant="outline"
+              disabled={selected.length === 0}
+              onClick={() => setBatchPrintOpen(true)}
+              className="flex items-center space-x-2"
+            >
+              <QrCode className="h-4 w-4" />
+              <span>批量打印二维码</span>
+              {selected.length > 0 && <span className="text-xs text-gray-500">({selected.length})</span>}
+            </Button>
           </div>
-          
-          <Button variant="outline" onClick={handleExport} className="flex items-center space-x-2">
-            <Download className="h-4 w-4" />
-            <span>导出列表</span>
-          </Button>
+          <div className="flex items-center space-x-2">
+            <Button variant="outline" onClick={handleExport} className="flex items-center space-x-2">
+              <Download className="h-4 w-4" />
+              <span>导出列表</span>
+            </Button>
+          </div>
         </div>
 
         {/* 器材列表 */}
@@ -419,6 +432,8 @@ export const EquipmentsPage: React.FC = () => {
               data={equipments || []}
               searchKey="name"
               searchPlaceholder="搜索器材名称..."
+              enableSelection
+              onSelectionChange={setSelected}
             />
           </CardContent>
         </Card>
@@ -451,6 +466,12 @@ export const EquipmentsPage: React.FC = () => {
         open={importModalOpen}
         onClose={() => setImportModalOpen(false)}
         onSuccess={handleDialogSuccess}
+      />
+
+      <EquipmentQRBatchPrint
+        open={batchPrintOpen}
+        onClose={() => setBatchPrintOpen(false)}
+        equipments={selected}
       />
     </PageContainer>
   )

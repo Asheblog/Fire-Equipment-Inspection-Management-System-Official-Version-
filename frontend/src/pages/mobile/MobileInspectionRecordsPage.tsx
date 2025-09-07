@@ -66,8 +66,8 @@ export function MobileInspectionRecordsPage() {
       const response = await inspectionApi.getById(inspectionId)
       if (response.success && response.data) {
         const checklistResults = response.data.checklistResults ? JSON.parse(response.data.checklistResults) : []
-        const inspectionImagesList = parseInspectionImages(response.data)
-        setSelectedInspection({ ...response.data, checklistResults, inspectionImagesList })
+        const normalizedImages = (response.data as any).inspectionImages || parseInspectionImages(response.data)
+        setSelectedInspection({ ...response.data, checklistResults, inspectionImagesList: normalizedImages })
         setDetailDialogOpen(true)
       }
     } catch (error) {

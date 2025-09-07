@@ -95,6 +95,7 @@ router.get('/qr/resolve/:raw', async (req, res) => {
 // 根据二维码获取位置下的所有器材和检查项
 router.get('/location/:qrCode', equipmentController.getLocationEquipments);
 
+
 // 生成二维码图片
 router.get('/qr-image/:qrCode', equipmentController.generateQRImage);
 

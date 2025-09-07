@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { createLogger } from '@/lib/logger'
 import { useAuthStore } from '@/stores/auth'
 import { useParams, useNavigate } from 'react-router-dom'
@@ -64,11 +64,24 @@ interface EquipmentInspectionForm {
 
 export const MobileInspectionPage: React.FC = () => {
   const log = createLogger('MobileInspect')
+  
   // 监听认证状态失效自动跳转
   const navigate = useNavigate()
   const { isAuthenticated } = useAuthStore()
+  
+  // 页面初始化时记录关键信息
   useEffect(() => {
+    log.info('MobileInspectionPage初始化', {
+      isAuthenticated,
+      userAgent: navigator.userAgent,
+      timestamp: new Date().toISOString()
+    })
+  }, [])
+  
+  useEffect(() => {
+    log.debug('认证状态变化', { isAuthenticated })
     if (!isAuthenticated) {
+      log.warn('用户未认证，准备跳转登录页面')
       navigate('/login', { replace: true })
     }
   }, [isAuthenticated, navigate])
@@ -77,6 +90,7 @@ export const MobileInspectionPage: React.FC = () => {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // 智能模式状态
   const [isMultiEquipment, setIsMultiEquipment] = useState(false)
@@ -99,33 +113,56 @@ export const MobileInspectionPage: React.FC = () => {
   // 多器材模式状态
   const [equipmentForms, setEquipmentForms] = useState<Record<number, EquipmentInspectionForm>>({})
 
-  // 智能加载数据：自动判断单器材还是多器材模式
+  // 原始单路径智能加载逻辑恢复
   useEffect(() => {
     const loadData = async () => {
+      // 首先检查认证状态
+      if (!isAuthenticated) {
+        log.debug('用户未认证，跳转登录页面')
+        setLoading(false)
+        navigate('/login', { replace: true })
+        return
+      }
+
       if (!qrCode) {
         setError('二维码参数缺失')
         setLoading(false)
         return
       }
+      
+      // 清除之前的超时定时器
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current)
+        loadingTimeoutRef.current = null
+      }
 
       try {
         setLoading(true)
-        
-        log.debug('开始智能加载: 位置API')
-        
-        // 先尝试位置API，看看这个位置有多少器材
+        setError('') // 清除之前的错误
+        log.debug('开始智能加载: 位置API', { qrCode })
+
+        // 设置超时保护机制 (15秒后自动失败)
+        const timeoutId = setTimeout(() => {
+          log.warn('API调用超时，可能存在网络问题或认证问题')
+          setLoading(false)
+          setError('加载超时，请检查网络连接或重新登录后再试')
+        }, 15000)
+        loadingTimeoutRef.current = timeoutId
+
         try {
           const locationResponse = await equipmentApi.getLocationEquipments(decodeURIComponent(qrCode))
           
+          // 清除超时定时器
+          if (loadingTimeoutRef.current) {
+            clearTimeout(loadingTimeoutRef.current)
+            loadingTimeoutRef.current = null
+          }
           if (locationResponse.success && locationResponse.data) {
             const locationData = locationResponse.data
             setLocationData(locationData)
-            
             if (locationData.hasMultipleEquipments && locationData.equipmentCount > 1) {
               log.debug('检测到多器材位置', { count: locationData.equipmentCount })
               setIsMultiEquipment(true)
-              
-              // 初始化多器材表单数据
               const initialForms: Record<number, EquipmentInspectionForm> = {}
               locationData.equipments.forEach(equipment => {
                 const checklistResults = equipment.checklistTemplate.map(template => ({
@@ -133,75 +170,99 @@ export const MobileInspectionPage: React.FC = () => {
                   result: 'NORMAL' as const,
                   note: ''
                 }))
-
                 initialForms[equipment.id] = {
                   equipmentId: equipment.id,
-                  inspectionImages: [],  // 多图片支持
+                  inspectionImages: [],
                   checklistResults,
                   overallResult: 'NORMAL'
                 }
               })
               setEquipmentForms(initialForms)
-              
             } else {
               log.debug('检测到单器材位置')
               setIsMultiEquipment(false)
-              
-              // 使用位置数据中的第一个器材作为单器材
               const singleEquipment = locationData.equipments[0]
               setEquipment(singleEquipment)
               setChecklist(singleEquipment.checklistTemplate)
-              
-              // 初始化单器材检查项状态
               const initialItems: Record<number, { result: 'NORMAL' | 'ABNORMAL'; remarks?: string }> = {}
-              singleEquipment.checklistTemplate.forEach(template => {
-                initialItems[template.id] = { result: 'NORMAL' }
-              })
+              singleEquipment.checklistTemplate.forEach(template => { initialItems[template.id] = { result: 'NORMAL' } })
               setCheckItems(initialItems)
             }
-            
           } else {
             throw new Error('位置API调用失败，尝试单器材回退模式')
           }
+        } catch (e) {
+          // 清除超时定时器
+          if (loadingTimeoutRef.current) {
+            clearTimeout(loadingTimeoutRef.current)
+            loadingTimeoutRef.current = null
+          }
           
-        } catch (locationErr) {
           log.warn('位置API失败，回退单器材模式')
-          
-          // 回退到原有的单器材逻辑
           const equipmentResponse = await equipmentApi.getByQR(decodeURIComponent(qrCode))
           if (!equipmentResponse.success || !equipmentResponse.data) {
             setError(equipmentResponse.message || '器材不存在')
             return
           }
-
           const equipmentData = equipmentResponse.data
           setEquipment(equipmentData)
           setIsMultiEquipment(false)
-
-          // 获取点检项模板
           const checklistResponse = await equipmentApi.getChecklist(equipmentData.id)
           if (checklistResponse.success && checklistResponse.data) {
             setChecklist(checklistResponse.data)
-            
-            // 初始化检查项状态
             const initialItems: Record<number, { result: 'NORMAL' | 'ABNORMAL'; remarks?: string }> = {}
-            checklistResponse.data.forEach(item => {
-              initialItems[item.id] = { result: 'NORMAL' }
-            })
+            checklistResponse.data.forEach(item => { initialItems[item.id] = { result: 'NORMAL' } })
             setCheckItems(initialItems)
           }
         }
-        
       } catch (err: any) {
+        // 确保在错误情况下也清除超时定时器
+        if (loadingTimeoutRef.current) {
+          clearTimeout(loadingTimeoutRef.current)
+          loadingTimeoutRef.current = null
+        }
+        
         log.error('加载数据失败', err)
-        setError(err.response?.data?.message || '加载数据失败')
+        
+        // 检查是否是认证相关错误
+        const isAuthError = err.response?.status === 401 || 
+                           err.response?.data?.error === 'TOKEN_EXPIRED' ||
+                           err.response?.data?.error === 'TOKEN_INVALID' ||
+                           err.response?.data?.error === 'UNAUTHORIZED' ||
+                           err.message?.includes('认证') ||
+                           err.message?.includes('登录')
+
+        if (isAuthError) {
+          log.warn('检测到认证错误，准备跳转登录', { error: err.response?.data?.error || err.message })
+          setLoading(false)
+          setError('登录已过期，请重新登录')
+          // 让认证检查的useEffect处理跳转，或者直接跳转
+          navigate('/login', { replace: true })
+          return
+        }
+
+        // 其他错误的处理
+        setError(err.response?.data?.message || err.message || '加载数据失败')
       } finally {
         setLoading(false)
+        // 确保清除超时定时器
+        if (loadingTimeoutRef.current) {
+          clearTimeout(loadingTimeoutRef.current)
+          loadingTimeoutRef.current = null
+        }
       }
     }
-
+    
     loadData()
-  }, [qrCode])
+    
+    // cleanup函数：组件卸载时清除定时器
+    return () => {
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current)
+        loadingTimeoutRef.current = null
+      }
+    }
+  }, [qrCode, isAuthenticated, navigate])
 
   // 单器材模式：检查是否有异常项
   useEffect(() => {
@@ -371,12 +432,25 @@ export const MobileInspectionPage: React.FC = () => {
   }
 
   if (loading) {
+    const debugInfo = process.env.NODE_ENV === 'development' || window.location.search.includes('debug=true')
+    
     return (
       <PageContainer variant="mobile">
         <div className="flex items-center justify-center min-h-[400px]">
           <div className="text-center">
             <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
             <p className="text-muted-foreground">智能识别器材模式中...</p>
+            
+            {debugInfo && (
+              <div className="mt-4 p-3 bg-gray-100 rounded-lg text-left text-xs space-y-1">
+                <div><strong>调试信息:</strong></div>
+                <div>认证状态: {isAuthenticated ? '✅ 已认证' : '❌ 未认证'}</div>
+                <div>二维码: {qrCode || '无'}</div>
+                <div>时间戳: {new Date().toLocaleTimeString()}</div>
+                <div>用户代理: {navigator.userAgent.split(' ').slice(-2).join(' ')}</div>
+                {loadingTimeoutRef.current && <div>⏰ 超时保护已启动</div>}
+              </div>
+            )}
           </div>
         </div>
       </PageContainer>

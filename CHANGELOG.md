@@ -38,6 +38,8 @@
     - 规范的徽章（badges）展示
 
 ### 🐛 重要修复
+ - 多图片显示：修复点检记录与隐患列表仅显示单张图片的问题；后端列表接口统一归一化返回 `inspectionImages / issueImages / fixedImages` 数组并保留旧单字段，前端 IssuePage 调整 `ImageGrid` 预加载以展示多图。
+ - 多图片详情：补充点检/隐患详情接口数组归一化；增强前端解析支持双层 JSON；记录与移动端记录详情优先使用服务端数组字段；新增 `DEBUG_IMAGES=1` 后端日志输出原始与解析结果，便于排查。
 
 - **修复 deploy-simple.js 部署脚本数据库初始化问题**
   - 🚨 **问题根因**：脚本使用 `prisma migrate deploy` 但在全新环境或无迁移文件时会失败

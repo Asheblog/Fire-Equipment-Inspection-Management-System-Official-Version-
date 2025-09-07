@@ -58,9 +58,24 @@ export const UserPermissionDialog: React.FC<UserPermissionDialogProps> = ({
         permissionApi.getPermissions({ isActive: true })
       ])
       
-      setUserPermissions(userPermsRes || null)
-      setAllRoles(rolesRes || [])
-      setAllPermissions(permsRes || [])
+      // 后端接口按约定应返回 data 数组/对象；若封装层未解包则这里兼容两种形态，避免出现 filter 不是函数错误
+      const resolvedUserPerms: any = (userPermsRes as any)?.roles
+        ? userPermsRes
+        : (userPermsRes as any)?.data || null
+      const resolvedRoles: any[] = Array.isArray(rolesRes)
+        ? rolesRes
+        : (rolesRes as any)?.data && Array.isArray((rolesRes as any).data)
+          ? (rolesRes as any).data
+          : []
+      const resolvedPerms: any[] = Array.isArray(permsRes)
+        ? permsRes
+        : (permsRes as any)?.data && Array.isArray((permsRes as any).data)
+          ? (permsRes as any).data
+          : []
+
+      setUserPermissions(resolvedUserPerms || null)
+      setAllRoles(resolvedRoles as Role[])
+      setAllPermissions(resolvedPerms as Permission[])
     } catch (error) {
       log.error('获取用户权限失败', error)
       toast.error('获取权限信息失败')

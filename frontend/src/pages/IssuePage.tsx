@@ -111,7 +111,7 @@ const IssueCard: React.FC<IssueCardProps> = ({ issue, onView, onHandle, onAudit,
                 showCountBadge={false}
                 numbered={false}
                 imageClassName="w-20 h-20"
-                eagerCount={1}
+                eagerCount={3}
               />
             </div>
           </div>

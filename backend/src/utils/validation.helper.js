@@ -110,6 +110,13 @@ class ValidationHelper {
         'array.min': '至少需要一个检查项',
         'any.required': '检查项列表为必填项'
       }),
+      // 新增：多图片字段（数组或JSON字符串）
+      inspectionImageUrls: Joi.alternatives().try(
+        Joi.array().items(
+          Joi.string().min(3).messages({ 'string.min': '点检图片URL过短' })
+        ).min(1).messages({ 'array.min': '至少需要1张点检图片' }),
+        Joi.string().min(3).messages({ 'string.min': '点检图片URL过短' })
+      ).optional(),
       // 修改：允许 /uploads/ 相对路径 或 完整 http(s) URL
       inspectionImageUrl: Joi.string().custom((value, helpers) => {
         if (!value) return helpers.error('any.required')
@@ -130,6 +137,17 @@ class ValidationHelper {
         otherwise: Joi.string().max(500).allow('', null).messages({
           'string.max': '异常描述不能超过500个字符'
         })
+      }),
+      // 新增：异常多图片字段（仅 ABNORMAL 时允许）
+      issueImageUrls: Joi.when('overallResult', {
+        is: 'ABNORMAL',
+        then: Joi.alternatives().try(
+          Joi.array().items(
+            Joi.string().min(3).messages({ 'string.min': '异常图片URL过短' })
+          ).min(1).messages({ 'array.min': '至少需要1张异常图片' }),
+          Joi.string().min(3).messages({ 'string.min': '异常图片URL过短' })
+        ).optional(),
+        otherwise: Joi.any().strip()
       }),
       issueImageUrl: Joi.when('overallResult', {
         is: 'ABNORMAL',

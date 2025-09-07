@@ -119,7 +119,12 @@ class EquipmentService {
         isExpired: equipment.expiryDate < new Date(),
         hasActiveIssues: equipment._count.issues > 0,
         inspectionCount: equipment._count.inspectionLogs,
-        qrImageUrl: await QRCodeGenerator.generateQRBase64(equipment.qrCode)
+        // 使用完整可访问 URL 生成二维码（兼容存量纯码）
+        qrImageUrl: await QRCodeGenerator.generateQRBase64(
+          (QRCodeGenerator.buildQRCodeURL && !equipment.qrCode.includes('/m/inspection/'))
+            ? QRCodeGenerator.buildQRCodeURL(equipment.qrCode)
+            : equipment.qrCode
+        )
       })));
 
       return {
@@ -194,7 +199,11 @@ class EquipmentService {
         isExpiring: this.isEquipmentExpiring(equipment.expiryDate, 30),
         isExpired: equipment.expiryDate < new Date(),
         hasActiveIssues: equipment.issues.length > 0,
-        qrImageUrl: await QRCodeGenerator.generateQRBase64(equipment.qrCode)
+        qrImageUrl: await QRCodeGenerator.generateQRBase64(
+          (QRCodeGenerator.buildQRCodeURL && !equipment.qrCode.includes('/m/inspection/'))
+            ? QRCodeGenerator.buildQRCodeURL(equipment.qrCode)
+            : equipment.qrCode
+        )
       };
 
       return result;
@@ -278,7 +287,11 @@ class EquipmentService {
         ...equipment,
         isExpiring: this.isEquipmentExpiring(equipment.expiryDate, 30),
         isExpired: equipment.expiryDate < new Date(),
-        qrImageUrl: await QRCodeGenerator.generateQRBase64(equipment.qrCode)
+        qrImageUrl: await QRCodeGenerator.generateQRBase64(
+          (QRCodeGenerator.buildQRCodeURL && !equipment.qrCode.includes('/m/inspection/'))
+            ? QRCodeGenerator.buildQRCodeURL(equipment.qrCode)
+            : equipment.qrCode
+        )
       };
     } catch (error) {
       console.error('根据二维码获取器材失败:', error);
@@ -423,7 +436,11 @@ class EquipmentService {
 
       return {
         ...equipment,
-        qrImageUrl: await QRCodeGenerator.generateQRBase64(equipment.qrCode)
+        qrImageUrl: await QRCodeGenerator.generateQRBase64(
+          (QRCodeGenerator.buildQRCodeURL && !equipment.qrCode.includes('/m/inspection/'))
+            ? QRCodeGenerator.buildQRCodeURL(equipment.qrCode)
+            : equipment.qrCode
+        )
       };
     } catch (error) {
       console.error('更新器材失败:', error);
@@ -1146,7 +1163,11 @@ class EquipmentService {
           checklistTemplate,
           isExpiring: this.isEquipmentExpiring(equipment.expiryDate, 30),
           isExpired: equipment.expiryDate < new Date(),
-          qrImageUrl: await QRCodeGenerator.generateQRBase64(equipment.qrCode)
+          qrImageUrl: await QRCodeGenerator.generateQRBase64(
+            (QRCodeGenerator.buildQRCodeURL && !equipment.qrCode.includes('/m/inspection/'))
+              ? QRCodeGenerator.buildQRCodeURL(equipment.qrCode)
+              : equipment.qrCode
+          )
         };
       }));
 

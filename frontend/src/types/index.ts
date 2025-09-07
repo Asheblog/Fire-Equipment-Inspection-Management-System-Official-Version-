@@ -64,6 +64,8 @@ export interface Equipment {
   lastInspectedAt?: string
   createdAt?: string
   description?: string
+  // 可选的二维码图片（Base64 DataURL，批量打印/预览时复用，避免重复请求）
+  qrImageUrl?: string
 }
 
 // 隐患状态枚举
