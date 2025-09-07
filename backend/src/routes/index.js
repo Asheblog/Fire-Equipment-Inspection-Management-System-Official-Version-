@@ -136,6 +136,14 @@ router.use('/system-settings',
 router.post('/upload',
   authenticate,
   rateLimiter.getUploadLimiter(),
+  (req, res, next) => {
+    let raw = 0;
+    req.on('data', c => { raw += c.length; });
+    req.on('end', () => {
+      console.log('[UPLOAD RAW_BYTES]', raw);
+    });
+    next();
+  },
   ...fileUpload.createUploadChain('file'),
   // EXIF 校验中间件（放在文件通过基本校验之后）
   async (req, res, next) => {

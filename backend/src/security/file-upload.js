@@ -251,10 +251,36 @@ class FileUploadSecurity {
       // 检查文件是否为空
       const stats = fs.statSync(file.path);
       if (stats.size === 0) {
-        this.deleteFile(file.path);
+        let debugId;
+        try {
+          debugId = crypto.randomBytes(6).toString('hex');
+        } catch {
+          debugId = Math.random().toString(36).slice(2, 8);
+        }
+        const debugPath = file.path + '.empty.debug';
+        try {
+          if (fs.existsSync(file.path)) {
+            fs.renameSync(file.path, debugPath);
+          }
+        } catch (e) {
+          console.warn('[UPLOAD EMPTY DEBUG] rename failed:', e.message);
+        }
+        console.warn(
+          '[UPLOAD EMPTY DEBUG] id=%s orig=%s stored=%s multerSize=%s statSize=%s ctype=%s clen=%s path=%s',
+          debugId,
+          file.originalname,
+            file.filename,
+          file.size,
+          stats.size,
+          req.headers['content-type'],
+          req.headers['content-length'],
+          debugPath
+        );
         return res.status(400).json({
           error: 'EMPTY_FILE',
-          message: '不能上传空文件'
+          message: '不能上传空文件',
+          debugId,
+          declaredSize: file.size
         });
       }
 

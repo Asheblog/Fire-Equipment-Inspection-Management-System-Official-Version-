@@ -30,8 +30,19 @@ const fileUpload = new FileUploadSecurity();
 
 // ===== 基础中间件配置 =====
 
-// 响应压缩
-app.use(compression());
+/**
+ * 响应压缩
+ * Phase1 调整：对 multipart/form-data（文件上传）请求跳过 compression，
+ * 避免在生产环境中压缩中间件提前干预原始请求流导致 Multer 得到空文件。
+ */
+app.use((req, res, next) => {
+  const ct = req.headers['content-type'] || '';
+  if (ct.startsWith('multipart/form-data')) {
+    // 跳过压缩
+    return next();
+  }
+  return compression()(req, res, next);
+});
 
 // HTTP请求日志（写入文件 + 控制台）
 app.use(morgan('combined', { stream: runtimeLogger.httpStream() }));

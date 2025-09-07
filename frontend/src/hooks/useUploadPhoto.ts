@@ -29,8 +29,13 @@ export function useUploadPhoto(options: UseUploadPhotoOptions = {}) {
       setLastResult(resultData);
       return resp;
     } catch (e: any) {
-      setError(e.message);
-      throw e;
+      let composed = e?.message || '上传失败';
+      const errData = e?.response?.data;
+      if (errData?.error) {
+        composed = `${errData.error}${errData.message ? ':' + errData.message : ''}`.trim();
+      }
+      setError(composed);
+      throw new Error(composed);
     } finally {
       setUploading(false);
     }
