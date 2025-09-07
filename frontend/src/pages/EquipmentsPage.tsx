@@ -288,6 +288,7 @@ export const EquipmentsPage: React.FC = () => {
   const columns = createColumns(handleEdit, handleDelete, handleViewQR)
   const [selected, setSelected] = useState<Equipment[]>([])
   const [batchPrintOpen, setBatchPrintOpen] = useState(false)
+  const [batchPrintAllOpen, setBatchPrintAllOpen] = useState(false)
 
   // 统计数据 - 添加空值检查
   const stats = {
@@ -412,8 +413,16 @@ export const EquipmentsPage: React.FC = () => {
               className="flex items-center space-x-2"
             >
               <QrCode className="h-4 w-4" />
-              <span>批量打印二维码</span>
+              <span>批量打印(已选)</span>
               {selected.length > 0 && <span className="text-xs text-gray-500">({selected.length})</span>}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setBatchPrintAllOpen(true)}
+              className="flex items-center space-x-2"
+            >
+              <QrCode className="h-4 w-4" />
+              <span>打印全部二维码</span>
             </Button>
           </div>
           <div className="flex items-center space-x-2">
@@ -472,6 +481,13 @@ export const EquipmentsPage: React.FC = () => {
         open={batchPrintOpen}
         onClose={() => setBatchPrintOpen(false)}
         equipments={selected}
+        mode="selected"
+      />
+      <EquipmentQRBatchPrint
+        open={batchPrintAllOpen}
+        onClose={() => setBatchPrintAllOpen(false)}
+        equipments={[]}
+        mode="all"
       />
     </PageContainer>
   )

@@ -219,16 +219,26 @@ export const IssuePage: React.FC = () => {
     }
   }
 
+  // 标签 -> 后端状态 映射，避免直接 toUpperCase 造成 'AUDIT' 无效
+  const mapTabToStatus = (tab: string): string | undefined => {
+    switch (tab) {
+      case 'pending':
+        return 'PENDING'
+      case 'audit':
+        return 'PENDING_AUDIT'
+      case 'closed':
+        return 'CLOSED'
+      case 'all':
+        return undefined
+      default:
+        return undefined
+    }
+  }
+
   // 标签页切换
   const handleTabChange = (value: string) => {
     setActiveTab(value)
-    const statusMap: { [key: string]: string } = {
-      'pending': 'PENDING',
-      'audit': 'PENDING_AUDIT', 
-      'closed': 'CLOSED',
-      'all': 'all'
-    }
-    loadIssues(statusMap[value], 1)
+    loadIssues(mapTabToStatus(value), 1)
   }
 
   // 处理隐患
@@ -248,7 +258,8 @@ export const IssuePage: React.FC = () => {
       
       closeAllDialogs()
       resetForms()
-      loadIssues(activeTab === 'all' ? undefined : activeTab.toUpperCase())
+      // 使用映射函数，修复原 toUpperCase 导致 'audit' -> 'AUDIT' 刷新失败
+      loadIssues(mapTabToStatus(activeTab))
     } catch (error: any) {
       log.error('处理隐患失败', error)
       if (isValidationError(error)) {
@@ -273,7 +284,8 @@ export const IssuePage: React.FC = () => {
       
       closeAllDialogs()
       resetForms()
-      loadIssues(activeTab === 'all' ? undefined : activeTab.toUpperCase())
+      // 使用映射函数刷新当前标签数据
+      loadIssues(mapTabToStatus(activeTab))
     } catch (error: any) {
       log.error('审核隐患失败', error)
       if (isValidationError(error)) {
@@ -363,7 +375,7 @@ export const IssuePage: React.FC = () => {
                   <Button
                     variant="outline"
                     disabled={pagination.page <= 1}
-                    onClick={() => loadIssues(activeTab === 'all' ? undefined : activeTab.toUpperCase(), pagination.page - 1)}
+                    onClick={() => loadIssues(mapTabToStatus(activeTab), pagination.page - 1)}
                   >
                     上一页
                   </Button>
@@ -373,7 +385,7 @@ export const IssuePage: React.FC = () => {
                   <Button
                     variant="outline"
                     disabled={pagination.page >= pagination.totalPages}
-                    onClick={() => loadIssues(activeTab === 'all' ? undefined : activeTab.toUpperCase(), pagination.page + 1)}
+                    onClick={() => loadIssues(mapTabToStatus(activeTab), pagination.page + 1)}
                   >
                     下一页
                   </Button>

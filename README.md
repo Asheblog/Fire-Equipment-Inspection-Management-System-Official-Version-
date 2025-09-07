@@ -365,15 +365,6 @@ A: 直接复制`backend/data/fire_safety.db`文件即可。建议定期自动备
 **Q: PM2集群模式如何配置？**
 A: 修改`backend/ecosystem.config.js`，设置instances: 'max'。注意SQLite不支持真正的并发写入。
 
----
-
-## 🔗 相关资源
-
-- [📄 API文档](backend/docs/API_DOCUMENTATION.md)
-- [🔄 更新日志](CHANGELOG.md)
-- [🤖 AI开发指导](CLAUDE.md)
-- [🔧 部署指南](docs/deployment-guide.md)
-
 ## 📝 许可证
 
 MIT License - 详情参见 [LICENSE](LICENSE) 文件

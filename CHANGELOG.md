@@ -1524,3 +1524,11 @@ node secure-deploy.js --non-interactive \
 - 文件位置: `frontend/src/pages/IssuePage.tsx:288`
 - 问题: 组件初始化时 `issues` 可能为 `undefined` 或非数组类型
 - 解决方案: 使用 `Array.isArray()` 进行类型检查并提供默认空数组
+### 新增
+- 前端 批量二维码打印功能增强：
+  - 增加“打印全部二维码”模式，支持自动分页抓取全部器材数据（分页循环上限 100 页防御）。
+  - 支持按厂区筛选（下拉刷新重载）。
+  - 原“批量打印二维码”按钮改为“批量打印(已选)”以区分模式。
+  - 组件 `EquipmentQRBatchPrint` 新增 `mode` 属性：`selected | all`。
+  - 安全与性能：限制单次最大抓取页数；未修改后端接口权限逻辑。
+  - 不更改现有响应结构，纯前端增强，符合前后端契约规范 (AGENTS.md 第16条)。
