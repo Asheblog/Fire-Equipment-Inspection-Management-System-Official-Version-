@@ -17,6 +17,7 @@ interface ImageGridProps {
   error?: string
   skeletonCount?: number
   eagerCount?: number
+  layout?: 'grid' | 'flow'
 }
 
 export const ImageGrid: React.FC<ImageGridProps> = ({
@@ -32,7 +33,8 @@ export const ImageGrid: React.FC<ImageGridProps> = ({
   loading = false,
   error,
   skeletonCount = 3,
-  eagerCount = 0
+  eagerCount = 0,
+  layout = 'grid'
 }) => {
   const filtered = images.filter(Boolean)
 
@@ -75,6 +77,7 @@ export const ImageGrid: React.FC<ImageGridProps> = ({
     )
   }
 
+  const isFlow = layout === 'flow'
   const gridClass = count === 1
     ? 'grid-cols-1 place-items-center'
     : `grid-cols-${gridCols.base || 2} ${gridCols.sm ? `sm:grid-cols-${gridCols.sm}` : ''} ${gridCols.md ? `md:grid-cols-${gridCols.md}` : ''}`
@@ -89,15 +92,18 @@ export const ImageGrid: React.FC<ImageGridProps> = ({
           )}
         </div>
       )}
-      <div className={cn('grid gap-4', gridClass)}>
+      <div className={cn(
+        isFlow ? 'flex flex-wrap gap-2' : 'grid gap-4',
+        !isFlow && gridClass
+      )}>
         {filtered.map((url, idx) => (
           <div key={idx} className="relative group">
             <AuthenticatedImage
               src={url}
               alt={`${label || '图片'} ${idx + 1}`}
               className={cn(
-                'w-full rounded-lg border shadow-sm object-cover',
-                count === 1 ? 'max-w-md max-h-72 object-contain' : 'h-40',
+                isFlow ? 'rounded-lg border shadow-sm object-cover' : 'w-full rounded-lg border shadow-sm object-cover',
+                count === 1 ? 'max-w-md max-h-72 object-contain' : (isFlow ? (imageClassName ? '' : 'w-24 h-24') : 'h-40'),
                 imageClassName
               )}
               enableZoom={enableZoom}

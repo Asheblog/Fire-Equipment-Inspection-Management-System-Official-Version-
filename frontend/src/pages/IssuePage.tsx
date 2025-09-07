@@ -112,6 +112,7 @@ const IssueCard: React.FC<IssueCardProps> = ({ issue, onView, onHandle, onAudit,
                 numbered={false}
                 imageClassName="w-20 h-20"
                 eagerCount={3}
+                layout="flow"
               />
             </div>
           </div>
