@@ -2,7 +2,6 @@ import React, { useMemo, useRef, useState } from 'react'
 import type { Equipment } from '@/types'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { createLogger } from '@/lib/logger'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 
@@ -31,12 +30,12 @@ interface FieldOptions {
 }
 
 export const EquipmentQRBatchPrint: React.FC<EquipmentQRBatchPrintProps> = ({ open, onClose, equipments }) => {
-  const log = createLogger('EquipmentQRBatchPrint')
   const printContainerRef = useRef<HTMLDivElement>(null)
 
   // 标签尺寸配置
   const [labelSize, setLabelSize] = useState<LabelPreset>(PRESETS[1]) // 默认 50×50
-  const [gapMm, setGapMm] = useState<number>(2) // 统一外边距（与打印窗口 margin:2mm 保持一致）
+  // 统一外边距（与打印窗口 margin:2mm 保持一致）固定值；如需动态调节再改为 state
+  const gapMm = 2
   const pagePaddingMm = 6 // A4 内页左右/上下 padding (打印 CSS 保持一致)
 
   // 字段显示配置
@@ -260,12 +259,7 @@ export const EquipmentQRBatchPrint: React.FC<EquipmentQRBatchPrintProps> = ({ op
   )
 }
 
-// 保留短码函数备用（当前未使用，若后续需要可调用）
-function formatShort(code: string) {
-  if (!code) return ''
-  if (code.length <= 16) return code
-  return code.slice(0, 8) + '...' + code.slice(-6)
-}
+// formatShort 函数此前未使用，已移除；若后续需要可从历史记录恢复
 
 function extractPure(full: string) {
   if (!full) return ''
