@@ -186,7 +186,7 @@ const MyIssuesPage: React.FC = () => {
     try {
       const params: any = {
         page,
-        pageSize: pagination.pageSize,
+        limit: pagination.pageSize,
         ...(status !== 'all' && { status }),
         ...(searchQuery && { search: searchQuery })
       }

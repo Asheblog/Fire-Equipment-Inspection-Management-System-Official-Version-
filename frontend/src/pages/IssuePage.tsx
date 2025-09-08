@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { createLogger } from '@/lib/logger'
 import { formatQrCodeDisplay } from '@/utils/qrCode'
 import { useAuthStore } from '@/stores/auth'
 import { useIssueStore } from '@/stores/issueStore'
-import { issueApi } from '@/api'
+import { issueApi, userApi, factoryApi } from '@/api'
 import { isValidationError, extractValidationErrors, showValidationSummary, focusFirstError } from '@/utils/validation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -15,6 +15,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { PageContainer, PageHeader, ContentSection } from '@/components/layout'
+import { format } from 'date-fns'
+import type { DateRange } from 'react-day-picker'
 import { 
   AlertTriangle,
   CheckCircle,
@@ -30,6 +32,9 @@ import {
   XCircle
 } from 'lucide-react'
 import type { Issue } from '@/types'
+import type { User as SysUser, Factory } from '@/types'
+import { IssueFilterPanel } from '@/components/issue/IssueFilterPanel'
+import { IssueAnalysisDialog } from '@/components/issue/IssueAnalysisDialog'
 
 interface IssueCardProps {
   issue: Issue
@@ -185,22 +190,51 @@ export const IssuePage: React.FC = () => {
   } = useIssueStore()
   
   const [activeTab, setActiveTab] = useState('pending')
+  // 本页筛选与分析状态
+  const [searchQuery, setSearchQuery] = useState('')
+  // 已精简：移除严重程度与是否有图筛选
+  const [overdue, setOverdue] = useState<number | undefined>(undefined)
+  const [dateRange, setDateRange] = useState<DateRange | undefined>({ from: undefined, to: undefined })
+  const [factoryIds, setFactoryIds] = useState<number[]>([])
+  const [reporterId, setReporterId] = useState<number | undefined>(undefined)
+  const [handlerId, setHandlerId] = useState<number | undefined>(undefined)
+  const [sortBy, setSortBy] = useState<'createdAt'|'handledAt'>('createdAt')
+  const [sortOrder, setSortOrder] = useState<'asc'|'desc'>('desc')
+  const [factories, setFactories] = useState<Factory[]>([])
+  const [inspectors, setInspectors] = useState<SysUser[]>([])
+  const [handlers, setHandlers] = useState<SysUser[]>([])
+  const [stats, setStats] = useState<any | null>(null)
+  const [trend, setTrend] = useState<any[]>([])
+  const [statsPeriod, setStatsPeriod] = useState<'today'|'week'|'month'|'year'>('month')
+  const [trendDays, setTrendDays] = useState<number>(30)
+  const [trendView, setTrendView] = useState<'stack'|'new'|'closed'>('stack')
+  const [analysisOpen, setAnalysisOpen] = useState(false)
+  const [analysisLoading, setAnalysisLoading] = useState(false)
 
   // 加载隐患列表
-  const loadIssues = async (status?: string, page = 1) => {
+  const buildParams = useCallback((page: number) => {
+    const params: any = {
+      page,
+      limit: pagination.pageSize,
+      sortBy,
+      sortOrder
+    }
+    const mapped = mapTabToStatus(activeTab)
+    if (mapped) params.status = mapped
+    if (searchQuery) params.search = searchQuery
+    if (typeof overdue === 'number' && overdue > 0) params.overdue = overdue
+    if (factoryIds && factoryIds.length > 0) params.factoryIds = factoryIds
+    if (reporterId) params.reporterId = reporterId
+    if (handlerId) params.handlerId = handlerId
+    if (dateRange?.from) params.startDate = format(dateRange.from, 'yyyy-MM-dd')
+    if (dateRange?.to) params.endDate = format(dateRange.to, 'yyyy-MM-dd')
+    return params
+  }, [activeTab, pagination.pageSize, sortBy, sortOrder, searchQuery, overdue, factoryIds, reporterId, handlerId, dateRange?.from, dateRange?.to])
+
+  const loadIssues = async (page = 1) => {
     try {
       setLoading(true)
-      const params: any = {
-        page,
-        pageSize: pagination.pageSize
-      }
-      
-      if (status && status !== 'all') {
-        params.status = status.toUpperCase()
-      }
-      
-      log.debug('加载隐患列表 发起请求', params)
-      const response = await issueApi.getList(params)
+      const response = await issueApi.getList(buildParams(page))
       log.debug('加载隐患列表 响应', { ok: response.success, count: response.data?.items?.length })
       const { data } = response
       if (data && Array.isArray(data.items)) {
@@ -238,7 +272,7 @@ export const IssuePage: React.FC = () => {
   // 标签页切换
   const handleTabChange = (value: string) => {
     setActiveTab(value)
-    loadIssues(mapTabToStatus(value), 1)
+    loadIssues(1)
   }
 
   // 处理隐患
@@ -259,7 +293,7 @@ export const IssuePage: React.FC = () => {
       closeAllDialogs()
       resetForms()
       // 使用映射函数，修复原 toUpperCase 导致 'audit' -> 'AUDIT' 刷新失败
-      loadIssues(mapTabToStatus(activeTab))
+      loadIssues(pagination.page)
     } catch (error: any) {
       log.error('处理隐患失败', error)
       if (isValidationError(error)) {
@@ -284,8 +318,8 @@ export const IssuePage: React.FC = () => {
       
       closeAllDialogs()
       resetForms()
-      // 使用映射函数刷新当前标签数据
-      loadIssues(mapTabToStatus(activeTab))
+      // 刷新当前列表
+      loadIssues(pagination.page)
     } catch (error: any) {
       log.error('审核隐患失败', error)
       if (isValidationError(error)) {
@@ -296,9 +330,92 @@ export const IssuePage: React.FC = () => {
     }
   }
 
+  // 初始化筛选选项
   useEffect(() => {
-    loadIssues('PENDING')
+    (async () => {
+      try {
+        if (user?.role !== 'INSPECTOR') {
+          const [factoryRes, inspectorRes, handlerRes] = await Promise.all([
+            factoryApi.getList(),
+            userApi.getList({ role: 'INSPECTOR' }),
+            userApi.getList({ role: 'FACTORY_ADMIN' })
+          ])
+          if (factoryRes.success && Array.isArray(factoryRes.data)) setFactories(factoryRes.data)
+          if (inspectorRes.success) {
+            const items = (inspectorRes.data as any).items || inspectorRes.data
+            if (Array.isArray(items)) setInspectors(items)
+          }
+          if (handlerRes.success) {
+            const items = (handlerRes.data as any).items || handlerRes.data
+            if (Array.isArray(items)) setHandlers(items)
+          }
+        }
+      } catch (e) { /* ignore */ }
+    })()
+  }, [user?.role])
+
+  // 首次加载只加载列表，分析数据在首次打开弹窗时再加载
+  useEffect(() => {
+    loadIssues(1)
   }, [])
+
+  const loadStatsAndTrend = async () => {
+    setAnalysisLoading(true)
+    try {
+      const base = buildParams(1)
+      // 移除分页
+      delete (base as any).page
+      delete (base as any).limit
+      const [statsRes, trendRes] = await Promise.all([
+        issueApi.getStats({ period: statsPeriod, ...(base as any) }),
+        issueApi.getTrend({ days: trendDays, ...(base as any) })
+      ])
+      if ((statsRes as any).success) setStats((statsRes as any).data)
+      if ((trendRes as any).success) setTrend(((trendRes as any).data) || [])
+    } catch (e) {
+      log.error('加载统计/趋势失败', e)
+    } finally {
+      setAnalysisLoading(false)
+    }
+  }
+
+  const applyFilters = () => {
+    setPagination({ ...pagination, page: 1 })
+    loadIssues(1)
+    if (analysisOpen || stats) {
+      loadStatsAndTrend()
+    }
+  }
+
+  const handleAnalysisOpenChange = (open: boolean) => {
+    if (open && !stats) {
+      loadStatsAndTrend()
+    }
+    setAnalysisOpen(open)
+  }
+
+  const handleExport = async () => {
+    try {
+      const payload: any = buildParams(1)
+      delete payload.page
+      delete payload.limit
+      const res = await issueApi.exportList({ format: 'excel', ...(payload as any) })
+      if ((res as any).success && (res as any).data?.downloadUrl) {
+        window.open((res as any).data.downloadUrl, '_blank')
+      }
+    } catch (e) { log.error('导出失败', e) }
+  }
+
+  const resetFilters = () => {
+    setSearchQuery('')
+    setOverdue(undefined)
+    setDateRange({ from: undefined, to: undefined })
+    setFactoryIds([])
+    setReporterId(undefined)
+    setHandlerId(undefined)
+    setSortBy('createdAt')
+    setSortOrder('desc')
+  }
 
   const getTabCounts = () => {
     // 确保 issues 是数组
@@ -321,6 +438,48 @@ export const IssuePage: React.FC = () => {
       />
 
       <ContentSection>
+        <IssueFilterPanel
+          userRole={user?.role}
+          searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+          dateRange={dateRange}
+            onDateRangeChange={setDateRange}
+          overdue={overdue}
+            onOverdueChange={setOverdue}
+          sortBy={sortBy}
+            onSortByChange={setSortBy}
+          sortOrder={sortOrder}
+            onSortOrderChange={setSortOrder}
+          factoryIds={factoryIds}
+            onFactoryIdsChange={setFactoryIds}
+          reporterId={reporterId}
+            onReporterIdChange={setReporterId}
+          handlerId={handlerId}
+            onHandlerIdChange={setHandlerId}
+          factories={factories}
+          inspectors={inspectors}
+          handlers={handlers}
+          onApply={applyFilters}
+          onReset={resetFilters}
+          onExport={handleExport}
+          onOpenAnalysis={() => handleAnalysisOpenChange(true)}
+        />
+
+        <IssueAnalysisDialog
+          open={analysisOpen}
+          onOpenChange={handleAnalysisOpenChange}
+          stats={stats}
+          trend={trend}
+          statsPeriod={statsPeriod}
+          trendDays={trendDays}
+          trendView={trendView}
+          onStatsPeriodChange={(v)=> { setStatsPeriod(v); loadStatsAndTrend(); }}
+          onTrendDaysChange={(v)=> { setTrendDays(v); loadStatsAndTrend(); }}
+          onTrendViewChange={setTrendView}
+          onRefresh={loadStatsAndTrend}
+          loading={analysisLoading}
+        />
+
         <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
         <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="pending" className="flex items-center gap-2">
@@ -375,7 +534,7 @@ export const IssuePage: React.FC = () => {
                   <Button
                     variant="outline"
                     disabled={pagination.page <= 1}
-                    onClick={() => loadIssues(mapTabToStatus(activeTab), pagination.page - 1)}
+                    onClick={() => loadIssues(pagination.page - 1)}
                   >
                     上一页
                   </Button>
@@ -385,7 +544,7 @@ export const IssuePage: React.FC = () => {
                   <Button
                     variant="outline"
                     disabled={pagination.page >= pagination.totalPages}
-                    onClick={() => loadIssues(mapTabToStatus(activeTab), pagination.page + 1)}
+                    onClick={() => loadIssues(pagination.page + 1)}
                   >
                     下一页
                   </Button>

@@ -1,5 +1,66 @@
 # 更新日志
 
+## 2025-09-08（隐患管理增强）
+
+### ✨ 新功能 / 变更摘要
+- 隐患管理页（PC）全面增强数据搜索、筛选、分析与导出能力：
+  - 搜索：支持按描述、设备名称、位置、二维码、上报人关键词模糊匹配。
+  - 筛选：状态、厂区（多选）、上报人、处理人、时间范围、是否有图片、超期天数、严重程度（近似规则）。
+  - 排序：创建时间 / 处理时间 / 严重程度（升/降序）。
+  - 分析：统计卡片（总数、待处理、待审核、已关闭、解决率、平均处理天数）与趋势图（7/30/90 天可切换，统计周期 today/week/month/year）。
+  - 视图切换：趋势支持“堆叠（待处理+已关闭）/ 新增 / 关闭”三种展示。
+  - 导出：按当前筛选导出隐患列表（Excel）。
+  - 交互：厂区多选支持“一键全选/清空”，并在筛选条下显示“已选厂区标签”（可单独移除）。
+
+### 🧭 前端改动
+- IssuePage（管理端）：
+  - 新增筛选工具条与统计/趋势区；导出按钮（Excel）。
+  - 厂区多选弹层“全选/清空”，并显示“已选厂区”标签；趋势视图切换。
+  - 列表请求统一传参 `page + limit`，并携带筛选条件。
+- API 封装（issueApi）：
+  - `getList` 参数扩展：`limit/status/reporterId/handlerId/factoryId/factoryIds/equipmentId/equipmentTypeId/startDate/endDate/search/hasImage/overdue/severity/sortBy/sortOrder`。
+  - `getStats` 与 `getTrend` 支持同筛选参数，新增 `period/days` 控制范围。
+  - 新增 `exportList`（POST `/issues/export`）。
+- 我的隐患页：分页参数从 `pageSize` 改为 `limit`（与后端对齐）。
+
+受影响文件（节选）
+- `frontend/src/pages/IssuePage.tsx`
+- `frontend/src/pages/MyIssuesPage.tsx`
+- `frontend/src/api/index.ts`
+
+### 🛠 后端改动
+- 路由与校验：
+  - `GET /api/issues` 接受扩展筛选；`GET /api/issues/stats`、`GET /api/issues/trend` 支持与列表一致的筛选参数；
+  - 新增 `POST /api/issues/export`（导出 Excel/CSV，前端默认用 Excel）。
+  - Joi 校验扩展：`search/hasImage/overdue/severity/equipmentTypeId/factoryIds` 等（`validation.helper.js`）。
+- 服务层（IssueService）：
+  - 统一使用 AND 组合 where，支持：多厂区、上报人/处理人、设备/类型、时间范围、关键词 OR（描述/设备名/位置/二维码/上报人）、是否有图、超期。
+  - 严重程度：采用“关键词 + 开放天数”的近似规则；支持筛选与排序（含计算后分页）。
+  - 统计/趋势：与列表共用过滤逻辑；趋势返回 `total/pending/closed`。
+- 导出服务（ReportExportService）：新增 `generateIssueListExcel/CSV`，生成下载直链（签名）。
+
+受影响文件（节选）
+- `backend/src/routes/issue.routes.js`
+- `backend/src/controllers/issue.controller.js`
+- `backend/src/services/issue.service.js`
+- `backend/src/utils/validation.helper.js`
+- `backend/src/services/report-export.service.js`
+
+### 📦 导出
+- 接口：`POST /api/issues/export`，请求体为当前筛选条件 + `format`（可选 `excel|csv`，前端默认 `excel`）。
+- 响应含一次性签名下载链接（默认 10 分钟有效）。
+
+### ⚠️ 兼容性与注意事项
+- 分页参数统一为 `page/limit`；前端已改为传 `limit`，后端返回 `data.pageSize=limit` 向下兼容旧渲染逻辑。
+- 严重程度为计算字段，在按严重程度筛选/排序时会先计算后分页；大数据量场景建议考虑预计算或缓存。
+- SQLite 模糊搜索默认为大小写敏感，如需不区分大小写可在未来迁移至支持 ci 的数据库或做字段预处理。
+
+### 🔬 验证建议
+1) 进入“隐患管理”页，按关键词/厂区多选/时间范围/是否有图/超期/严重程度组合筛选，校验列表、统计卡片与趋势联动一致。
+2) 切换排序字段与升降序，观察列表与分页变化。
+3) 切换趋势“堆叠/新增/关闭”与“7/30/90 天”“today/week/month/year”，校验曲线。
+4) 点击导出，下载 Excel，核对字段与数量与当前筛选一致。
+
 ## 2025-09-08
 
 ### ✨ 新功能 / 变更摘要

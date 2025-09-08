@@ -304,14 +304,22 @@ export const issueApi = {
   // 获取隐患列表（统一分页结构）
   getList: (params?: {
     page?: number
-    pageSize?: number
+    limit?: number // 后端使用 limit
     status?: string
     reporterId?: number
     handlerId?: number
     factoryId?: number
+    factoryIds?: number[]
     equipmentId?: number
+    equipmentTypeId?: number
     startDate?: string
     endDate?: string
+    search?: string
+    hasImage?: boolean
+    overdue?: number
+    severity?: 'LOW'|'MEDIUM'|'HIGH'|'CRITICAL'
+    sortBy?: 'createdAt' | 'handledAt' | 'severity'
+    sortOrder?: 'asc' | 'desc'
   }): Promise<PaginatedResponse<Issue>> =>
     api.get('/issues', { params }) as unknown as Promise<PaginatedResponse<Issue>>, // 约定后端返回 data: { items, total, page, pageSize, totalPages }
     
@@ -338,13 +346,25 @@ export const issueApi = {
   addComment: (id: number, data: { comment: string }): Promise<ApiResponse> =>
     api.post(`/issues/${id}/comments`, data),
     
-  // 获取隐患统计
-  getStats: (params?: { period?: string }): Promise<ApiResponse> =>
+  // 获取隐患统计（与列表筛选联动）
+  getStats: (params?: { period?: 'today'|'week'|'month'|'year' } & {
+    status?: string; reporterId?: number; handlerId?: number; factoryId?: number; factoryIds?: number[]; equipmentId?: number; equipmentTypeId?: number; startDate?: string; endDate?: string; search?: string; hasImage?: boolean; overdue?: number; severity?: 'LOW'|'MEDIUM'|'HIGH'|'CRITICAL'
+  }): Promise<ApiResponse> =>
     api.get('/issues/stats', { params }),
     
-  // 获取隐患趋势
-  getTrend: (params?: { days?: number }): Promise<ApiResponse> =>
-    api.get('/issues/trend', { params })
+  // 获取隐患趋势（与筛选联动）
+  getTrend: (params?: { days?: number } & {
+    status?: string; reporterId?: number; handlerId?: number; factoryId?: number; factoryIds?: number[]; equipmentId?: number; equipmentTypeId?: number; startDate?: string; endDate?: string; search?: string; hasImage?: boolean; overdue?: number; severity?: 'LOW'|'MEDIUM'|'HIGH'|'CRITICAL'
+  }): Promise<ApiResponse> =>
+    api.get('/issues/trend', { params }),
+
+  // 导出隐患列表
+  exportList: (data: {
+    format?: 'excel'|'csv'
+  } & {
+    status?: string; reporterId?: number; handlerId?: number; factoryId?: number; factoryIds?: number[]; equipmentId?: number; equipmentTypeId?: number; startDate?: string; endDate?: string; search?: string; hasImage?: boolean; overdue?: number; severity?: 'LOW'|'MEDIUM'|'HIGH'|'CRITICAL'
+  }): Promise<ApiResponse> =>
+    api.post('/issues/export', data)
 }
 
 // 用户管理API

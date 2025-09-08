@@ -34,10 +34,17 @@ class IssueService {
       const {
         status,
         equipmentId,
+        equipmentTypeId,
         reporterId,
+        handlerId,
         startDate,
         endDate,
-        severity
+        severity,
+        search,
+        hasImage,
+        overdue,
+        factoryId,
+        factoryIds
       } = filters;
 
       const {
@@ -49,53 +56,117 @@ class IssueService {
 
       console.log('🔍 [隐患服务调试] 解析后的分页参数:', { page, limit, sortBy, sortOrder });
 
-      // 构建查询条件
-      const where = {};
+      // 构建查询条件（使用 AND 聚合）
+      const andConds = [];
 
-      // 数据隔离（支持多厂区）
+      // 数据隔离 + 前端厂区筛选取交集
+      let allowedFactoryIds = null;
+      const explicitFactoryIds = Array.isArray(factoryIds) && factoryIds.length > 0
+        ? factoryIds
+        : (factoryId ? [factoryId] : []);
+
       if (Array.isArray(userFactoryId) && userFactoryId.length > 0) {
-        where.equipment = { factoryId: { in: userFactoryId } };
-        console.log('🔍 [隐患服务调试] 添加厂区过滤条件:', { factoryIds: userFactoryId });
+        allowedFactoryIds = explicitFactoryIds.length > 0 ? explicitFactoryIds.filter(id => userFactoryId.includes(id)) : userFactoryId;
+        if (Array.isArray(allowedFactoryIds) && allowedFactoryIds.length === 0) {
+          // 无权限交集，直接返回空结果
+          return {
+            issues: [],
+            pagination: { total: 0, page, limit, pages: 0, hasNext: false, hasPrev: false }
+          };
+        }
       } else if (userFactoryId) {
-        where.equipment = { factoryId: userFactoryId };
-        console.log('🔍 [隐患服务调试] 添加厂区过滤条件:', { factoryId: userFactoryId });
+        // 单厂区权限
+        allowedFactoryIds = explicitFactoryIds.length > 0 ? explicitFactoryIds.filter(id => id === userFactoryId) : [userFactoryId];
+        if (!allowedFactoryIds || allowedFactoryIds.length === 0) {
+          return {
+            issues: [],
+            pagination: { total: 0, page, limit, pages: 0, hasNext: false, hasPrev: false }
+          };
+        }
       } else {
-        console.log('🔍 [隐患服务调试] ⚠️  无厂区过滤条件 (userFactoryId 为空)');
+        // 超级管理员，无限制 -> 使用显式选择（如有）
+        allowedFactoryIds = explicitFactoryIds.length > 0 ? explicitFactoryIds : null;
+      }
+      if (allowedFactoryIds) {
+        andConds.push({ equipment: { factoryId: Array.isArray(allowedFactoryIds) ? { in: allowedFactoryIds } : allowedFactoryIds } });
+        console.log('🔍 [隐患服务调试] 添加厂区过滤条件:', { allowedFactoryIds });
+      } else {
+        console.log('🔍 [隐患服务调试] ⚠️  无厂区过滤条件 (使用全部可见)');
       }
 
       // 点检员只能查看自己上报的隐患
       if (userRole === 'INSPECTOR' && userId) {
-        where.reporterId = userId;
+        andConds.push({ reporterId: userId });
         console.log('🔍 [隐患服务调试] 添加点检员过滤条件:', { reporterId: userId });
       } else if (reporterId) {
-        where.reporterId = reporterId;
+        andConds.push({ reporterId });
         console.log('🔍 [隐患服务调试] 添加上报人过滤条件:', { reporterId });
+      }
+
+      // 处理人筛选
+      if (handlerId) {
+        andConds.push({ handlerId });
+        console.log('🔍 [隐患服务调试] 添加处理人过滤条件:', { handlerId });
       }
 
       // 状态筛选
       if (status) {
-        where.status = status;
+        andConds.push({ status });
         console.log('🔍 [隐患服务调试] 添加状态过滤条件:', { status });
       }
 
       // 器材筛选
       if (equipmentId) {
-        where.equipmentId = equipmentId;
+        andConds.push({ equipmentId });
         console.log('🔍 [隐患服务调试] 添加器材过滤条件:', { equipmentId });
+      }
+      if (equipmentTypeId) {
+        andConds.push({ equipment: { typeId: equipmentTypeId } });
+        console.log('🔍 [隐患服务调试] 添加器材类型过滤条件:', { equipmentTypeId });
       }
 
       // 日期范围筛选
       if (startDate || endDate) {
-        where.createdAt = {};
-        if (startDate) {
-          where.createdAt.gte = new Date(startDate);
-        }
-        if (endDate) {
-          where.createdAt.lte = new Date(endDate);
-        }
-        console.log('🔍 [隐患服务调试] 添加日期过滤条件:', where.createdAt);
+        const dateFilter = {};
+        if (startDate) dateFilter.gte = new Date(startDate);
+        if (endDate) dateFilter.lte = new Date(endDate);
+        andConds.push({ createdAt: dateFilter });
+        console.log('🔍 [隐患服务调试] 添加日期过滤条件:', dateFilter);
       }
 
+      // 关键词搜索（描述/设备名/位置/二维码/上报人）
+      if (search && String(search).trim().length > 0) {
+        const s = String(search).trim();
+        andConds.push({ OR: [
+          { description: { contains: s } },
+          { equipment: { name: { contains: s } } },
+          { equipment: { location: { contains: s } } },
+          { equipment: { qrCode: { contains: s } } },
+          { reporter: { fullName: { contains: s } } }
+        ]});
+        console.log('🔍 [隐患服务调试] 添加搜索过滤条件:', { search: s });
+      }
+
+      // 是否包含图片
+      if (hasImage === true) {
+        andConds.push({ OR: [
+          { issueImageUrl: { not: null } },
+          { fixedImageUrl: { not: null } },
+          { issueImageUrls: { not: null } },
+          { fixedImageUrls: { not: null } }
+        ]});
+        console.log('🔍 [隐患服务调试] 添加有图过滤条件');
+      }
+
+      // 超期（开放天数 > overdue，仅统计未关闭/未驳回）
+      if (overdue && Number.isInteger(overdue) && overdue > 0) {
+        const overdueDate = new Date(Date.now() - overdue * 24 * 60 * 60 * 1000);
+        andConds.push({ createdAt: { lte: overdueDate } });
+        andConds.push({ status: { in: ['PENDING', 'IN_PROGRESS', 'PENDING_AUDIT'] } });
+        console.log('🔍 [隐患服务调试] 添加超期过滤条件:', { overdueDays: overdue });
+      }
+
+      const where = andConds.length > 0 ? { AND: andConds } : {};
       console.log('🔍 [隐患服务调试] 最终的查询条件:', JSON.stringify(where, null, 2));
 
       const skip = (page - 1) * limit;
@@ -104,63 +175,64 @@ class IssueService {
 
       console.log('🔍 [隐患服务调试] 分页和排序:', { skip, limit, orderBy });
 
-      // 先查询总数
-      console.log('🔍 [隐患服务调试] 开始执行count查询...');
-      const total = await this.prisma.issue.count({ where });
-      console.log('🔍 [隐患服务调试] 查询到的总记录数:', total);
+      // 分支：是否需要计算型严重程度（筛选/排序）
+      let issues, total;
+      const requiresComputedSeverity = Boolean(severity) || sortBy === 'severity';
 
-      // 再查询列表
-      console.log('🔍 [隐患服务调试] 开始执行findMany查询...');
-      const issues = await this.prisma.issue.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy,
-        include: {
-          equipment: {
-            select: {
-              id: true,
-              name: true,
-              qrCode: true,
-              location: true,
-              factory: {
-                select: { id: true, name: true }
-              },
-              equipmentType: {
-                select: { id: true, name: true }
+      if (requiresComputedSeverity) {
+        console.log('🔍 [隐患服务调试] 使用计算型严重程度进行筛选/排序');
+        // 先取全量匹配 where 的数据
+        issues = await this.prisma.issue.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          include: {
+            equipment: {
+              select: {
+                id: true,
+                name: true,
+                qrCode: true,
+                location: true,
+                factory: { select: { id: true, name: true } },
+                equipmentType: { select: { id: true, name: true } }
               }
-            }
-          },
-          reporter: {
-            select: {
-              id: true,
-              fullName: true,
-              role: true
-            }
-          },
-          handler: {
-            select: {
-              id: true,
-              fullName: true,
-              role: true
-            }
-          },
-          auditor: {
-            select: {
-              id: true,
-              fullName: true,
-              role: true
-            }
-          },
-          inspectionLog: {
-            select: {
-              id: true,
-              inspectionTime: true,
-              overallResult: true
-            }
+            },
+            reporter: { select: { id: true, fullName: true, role: true } },
+            handler: { select: { id: true, fullName: true, role: true } },
+            auditor: { select: { id: true, fullName: true, role: true } },
+            inspectionLog: { select: { id: true, inspectionTime: true, overallResult: true } }
           }
-        }
-      });
+        });
+      } else {
+        // 先查询总数
+        console.log('🔍 [隐患服务调试] 开始执行count查询...');
+        total = await this.prisma.issue.count({ where });
+        console.log('🔍 [隐患服务调试] 查询到的总记录数:', total);
+
+        // 再查询列表（使用数据库分页）
+        console.log('🔍 [隐患服务调试] 开始执行findMany查询...');
+        issues = await this.prisma.issue.findMany({
+          where,
+          skip,
+          take: limit,
+          orderBy,
+          include: {
+            equipment: {
+              select: {
+                id: true,
+                name: true,
+                qrCode: true,
+                location: true,
+              factory: { select: { id: true, name: true } },
+              equipmentType: { select: { id: true, name: true } }
+              }
+            },
+            reporter: { select: { id: true, fullName: true, role: true } },
+            handler: { select: { id: true, fullName: true, role: true } },
+            auditor: { select: { id: true, fullName: true, role: true } },
+            inspectionLog: { select: { id: true, inspectionTime: true, overallResult: true } }
+          }
+        });
+      }
 
       console.log('🔍 [隐患服务调试] 查询到的记录数:', issues.length);
       
@@ -202,10 +274,8 @@ class IssueService {
         }
       }
 
-      const pages = Math.ceil(total / limit);
-
       // 计算隐患处理时效 & 归一化多图片字段（与详情接口保持一致结构）
-      const processedIssues = issues.map(issue => {
+      let processedIssues = issues.map(issue => {
         const issueImages = ImageHelper.extractImages(issue, 'issueImageUrls', 'issueImageUrl');
         const fixedImages = ImageHelper.extractImages(issue, 'fixedImageUrls', 'fixedImageUrl');
         return {
@@ -222,6 +292,32 @@ class IssueService {
           severity: this.calculateIssueSeverity(issue)
         };
       });
+
+      // 计算型严重程度筛选
+      if (severity) {
+        processedIssues = processedIssues.filter(i => i.severity === severity);
+      }
+
+      // 严重程度排序（如请求）
+      if (sortBy === 'severity') {
+        const order = ['LOW','MEDIUM','HIGH','CRITICAL'];
+        processedIssues.sort((a,b) => {
+          const av = order.indexOf(a.severity || 'LOW');
+          const bv = order.indexOf(b.severity || 'LOW');
+          return sortOrder === 'asc' ? av - bv : bv - av;
+        });
+      }
+
+      // 计算分页（若前面未统计 total，则以筛选后总数为准）
+      if (typeof total !== 'number') {
+        total = processedIssues.length;
+      }
+      const pages = Math.ceil(total / limit);
+
+      // 若使用计算分页，需要手动切片
+      if (requiresComputedSeverity) {
+        processedIssues = processedIssues.slice(skip, skip + limit);
+      }
 
       const result = {
         issues: processedIssues,
@@ -633,7 +729,7 @@ class IssueService {
    * @param {string} period - 统计周期
    * @returns {Promise<Object>} 统计信息
    */
-  async getIssueStats(factoryId = null, userId = null, userRole = null, period = 'month') {
+  async getIssueStats(filters = {}, userFactoryId = null, userId = null, userRole = null, period = 'month') {
     try {
       // 根据周期计算开始时间
       const now = new Date();
@@ -658,20 +754,64 @@ class IssueService {
           startTime = new Date(now.getFullYear(), now.getMonth(), 1);
       }
 
-      // 构建查询条件
-      const where = {
-        createdAt: { gte: startTime }
-      };
+      // 构建查询条件（对齐列表筛选）
+      const andConds = [{ createdAt: { gte: startTime } }];
 
-      // 数据隔离
-      if (factoryId) {
-        where.equipment = { factoryId };
+      const { reporterId, handlerId, status, equipmentId, equipmentTypeId, search, hasImage, overdue, factoryId, factoryIds, startDate, endDate } = filters || {};
+
+      // 数据隔离 + 厂区筛选
+      let allowedFactoryIds = null;
+      const explicitFactoryIds = Array.isArray(factoryIds) && factoryIds.length > 0 ? factoryIds : (factoryId ? [factoryId] : []);
+      if (Array.isArray(userFactoryId) && userFactoryId.length > 0) {
+        allowedFactoryIds = explicitFactoryIds.length > 0 ? explicitFactoryIds.filter(id => userFactoryId.includes(id)) : userFactoryId;
+      } else if (userFactoryId) {
+        allowedFactoryIds = explicitFactoryIds.length > 0 ? explicitFactoryIds.filter(id => id === userFactoryId) : [userFactoryId];
+      } else {
+        allowedFactoryIds = explicitFactoryIds.length > 0 ? explicitFactoryIds : null;
+      }
+      if (allowedFactoryIds) andConds.push({ equipment: { factoryId: Array.isArray(allowedFactoryIds) ? { in: allowedFactoryIds } : allowedFactoryIds } });
+
+      if (userRole === 'INSPECTOR' && userId) andConds.push({ reporterId: userId });
+      if (reporterId) andConds.push({ reporterId });
+      if (handlerId) andConds.push({ handlerId });
+      if (status) andConds.push({ status });
+      if (equipmentId) andConds.push({ equipmentId });
+      if (equipmentTypeId) andConds.push({ equipment: { typeId: equipmentTypeId } });
+
+      if (startDate || endDate) {
+        const range = {};
+        if (startDate) range.gte = new Date(startDate);
+        if (endDate) range.lte = new Date(endDate);
+        andConds.push({ createdAt: range });
       }
 
-      // 点检员只能查看自己的统计
-      if (userRole === 'INSPECTOR' && userId) {
-        where.reporterId = userId;
+      if (search && String(search).trim().length > 0) {
+        const s = String(search).trim();
+        andConds.push({ OR: [
+          { description: { contains: s } },
+          { equipment: { name: { contains: s } } },
+          { equipment: { location: { contains: s } } },
+          { equipment: { qrCode: { contains: s } } },
+          { reporter: { fullName: { contains: s } } }
+        ]});
       }
+
+      if (hasImage === true) {
+        andConds.push({ OR: [
+          { issueImageUrl: { not: null } },
+          { fixedImageUrl: { not: null } },
+          { issueImageUrls: { not: null } },
+          { fixedImageUrls: { not: null } }
+        ]});
+      }
+
+      if (overdue && Number.isInteger(overdue) && overdue > 0) {
+        const overdueDate = new Date(Date.now() - overdue * 24 * 60 * 60 * 1000);
+        andConds.push({ createdAt: { lte: overdueDate } });
+        andConds.push({ status: { in: ['PENDING', 'IN_PROGRESS', 'PENDING_AUDIT'] } });
+      }
+
+      const where = andConds.length > 0 ? { AND: andConds } : {};
 
       const [
         totalIssues,
@@ -730,21 +870,68 @@ class IssueService {
    * @param {number} days - 天数
    * @returns {Promise<Array>} 趋势数据
    */
-  async getIssueTrend(factoryId = null, days = 30) {
+  async getIssueTrend(filters = {}, userFactoryId = null, days = 30) {
     try {
       const endDate = new Date();
       const startDate = new Date(endDate.getTime() - days * 24 * 60 * 60 * 1000);
 
-      const where = {
-        createdAt: {
-          gte: startDate,
-          lte: endDate
-        }
-      };
+      // 构建 where（与列表筛选一致）
+      const andConds = [{ createdAt: { gte: startDate, lte: endDate } }];
+      const { reporterId, handlerId, status, equipmentId, equipmentTypeId, search, hasImage, overdue, factoryId, factoryIds, startDate: fStart, endDate: fEnd } = (typeof filters === 'object' && filters) || {};
 
-      if (factoryId) {
-        where.equipment = { factoryId };
+      // 数据隔离 + 厂区筛选
+      let allowedFactoryIds = null;
+      const explicitFactoryIds = Array.isArray(factoryIds) && factoryIds.length > 0 ? factoryIds : (factoryId ? [factoryId] : []);
+      if (Array.isArray(userFactoryId) && userFactoryId.length > 0) {
+        allowedFactoryIds = explicitFactoryIds.length > 0 ? explicitFactoryIds.filter(id => userFactoryId.includes(id)) : userFactoryId;
+      } else if (userFactoryId) {
+        allowedFactoryIds = explicitFactoryIds.length > 0 ? explicitFactoryIds.filter(id => id === userFactoryId) : [userFactoryId];
+      } else {
+        allowedFactoryIds = explicitFactoryIds.length > 0 ? explicitFactoryIds : null;
       }
+      if (allowedFactoryIds) andConds.push({ equipment: { factoryId: Array.isArray(allowedFactoryIds) ? { in: allowedFactoryIds } : allowedFactoryIds } });
+
+      // 点检员统计维持原有规则：仅以 reporterId 控制在调用处处理
+      if (reporterId) andConds.push({ reporterId });
+      if (handlerId) andConds.push({ handlerId });
+      if (status) andConds.push({ status });
+      if (equipmentId) andConds.push({ equipmentId });
+      if (equipmentTypeId) andConds.push({ equipment: { typeId: equipmentTypeId } });
+
+      if (fStart || fEnd) {
+        const range = {};
+        if (fStart) range.gte = new Date(fStart);
+        if (fEnd) range.lte = new Date(fEnd);
+        andConds.push({ createdAt: range });
+      }
+
+      if (search && String(search).trim().length > 0) {
+        const s = String(search).trim();
+        andConds.push({ OR: [
+          { description: { contains: s } },
+          { equipment: { name: { contains: s } } },
+          { equipment: { location: { contains: s } } },
+          { equipment: { qrCode: { contains: s } } },
+          { reporter: { fullName: { contains: s } } }
+        ]});
+      }
+
+      if (hasImage === true) {
+        andConds.push({ OR: [
+          { issueImageUrl: { not: null } },
+          { fixedImageUrl: { not: null } },
+          { issueImageUrls: { not: null } },
+          { fixedImageUrls: { not: null } }
+        ]});
+      }
+
+      if (overdue && Number.isInteger(overdue) && overdue > 0) {
+        const overdueDate = new Date(Date.now() - overdue * 24 * 60 * 60 * 1000);
+        andConds.push({ createdAt: { lte: overdueDate } });
+        andConds.push({ status: { in: ['PENDING', 'IN_PROGRESS', 'PENDING_AUDIT'] } });
+      }
+
+      const where = andConds.length > 0 ? { AND: andConds } : {};
 
       // 按日期分组统计
       const issues = await this.prisma.issue.findMany({

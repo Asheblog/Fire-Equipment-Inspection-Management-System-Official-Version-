@@ -227,11 +227,18 @@ class IssueController {
   async getIssueStats(req, res) {
     try {
       const { user, dataFilter } = req;
-      const { period = 'month' } = req.query;
+      const { period = 'month', ...filters } = req.query;
 
-      const factoryId = dataFilter ? dataFilter.factoryId : null;
+      // 数据隔离（保持与列表一致）
+      const userFactoryId = (user?.role === 'SUPER_ADMIN')
+        ? null
+        : (Array.isArray(user?.factoryIds) && user.factoryIds.length > 0
+            ? user.factoryIds
+            : (dataFilter ? (dataFilter.factoryIds || (dataFilter.factoryId ? [dataFilter.factoryId] : null)) : null));
+
       const stats = await this.issueService.getIssueStats(
-        factoryId,
+        filters,
+        userFactoryId,
         user.id,
         user.role,
         period
@@ -250,22 +257,84 @@ class IssueController {
    */
   async getIssueTrend(req, res) {
     try {
-      const { dataFilter } = req;
-      const { days = 30 } = req.query;
+      const { user, dataFilter } = req;
+      const { days = 30, ...filters } = req.query;
 
       if (isNaN(parseInt(days)) || parseInt(days) < 1 || parseInt(days) > 365) {
         return ResponseHelper.badRequest(res, '天数参数必须在1-365之间');
       }
 
-      const factoryId = dataFilter ? dataFilter.factoryId : null;
+      const userFactoryId = (user?.role === 'SUPER_ADMIN')
+        ? null
+        : (Array.isArray(user?.factoryIds) && user.factoryIds.length > 0
+            ? user.factoryIds
+            : (dataFilter ? (dataFilter.factoryIds || (dataFilter.factoryId ? [dataFilter.factoryId] : null)) : null));
+
       const trend = await this.issueService.getIssueTrend(
-        factoryId,
+        filters,
+        userFactoryId,
         parseInt(days)
       );
 
       return ResponseHelper.success(res, trend, '隐患趋势获取成功');
     } catch (error) {
       console.error('获取隐患趋势失败:', error);
+      return ResponseHelper.internalError(res, error.message);
+    }
+  }
+
+  /**
+   * 导出隐患列表（按筛选条件）
+   * POST /api/issues/export
+   */
+  async exportIssueList(req, res) {
+    try {
+      const { user, dataFilter } = req;
+      const { format = 'excel', ...filters } = req.body || {};
+
+      // 数据隔离（保持与列表一致）
+      const userFactoryId = (user?.role === 'SUPER_ADMIN')
+        ? null
+        : (Array.isArray(user?.factoryIds) && user.factoryIds.length > 0
+            ? user.factoryIds
+            : (dataFilter ? (dataFilter.factoryIds || (dataFilter.factoryId ? [dataFilter.factoryId] : null)) : null));
+
+      // 取全量数据（在服务内按筛选对齐）
+      const { issues } = await this.issueService.getIssueList(
+        filters,
+        { page: 1, limit: 100000, sortBy: 'createdAt', sortOrder: 'desc' },
+        userFactoryId,
+        user.id,
+        user.role
+      );
+
+      // 生成导出文件
+      const ReportExportService = require('../services/report-export.service');
+      const DownloadTokenUtil = require('../utils/download-token.util');
+      const exportService = new ReportExportService();
+
+      let exportResult;
+      if (format === 'csv') {
+        exportResult = await exportService.generateIssueListCSV(issues);
+      } else {
+        exportResult = await exportService.generateIssueListExcel(issues);
+      }
+
+      // 生成一次性下载链接
+      const signedUrl = DownloadTokenUtil.generateSignedUrl(exportResult.filename, {
+        userId: req.user?.id,
+        ttlSec: parseInt(process.env.DOWNLOAD_TOKEN_TTL || '600', 10)
+      });
+
+      return ResponseHelper.success(res, {
+        downloadUrl: signedUrl,
+        filename: exportResult.filename,
+        size: exportResult.size || null,
+        generatedAt: new Date().toISOString()
+      }, '导出生成成功');
+
+    } catch (error) {
+      console.error('导出隐患列表失败:', error);
       return ResponseHelper.internalError(res, error.message);
     }
   }
@@ -281,5 +350,6 @@ module.exports = {
   auditIssue: issueController.auditIssue.bind(issueController),
   addComment: issueController.addComment.bind(issueController),
   getIssueStats: issueController.getIssueStats.bind(issueController),
-  getIssueTrend: issueController.getIssueTrend.bind(issueController)
+  getIssueTrend: issueController.getIssueTrend.bind(issueController),
+  exportIssueList: issueController.exportIssueList.bind(issueController)
 };

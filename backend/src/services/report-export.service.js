@@ -371,6 +371,96 @@ class ReportExportService {
   }
 
   /**
+   * 生成Excel格式的隐患列表（按筛选导出）
+   * @param {Array} issues - 隐患数组（已包含 equipment/reporters 等关联信息与计算字段）
+   */
+  async generateIssueListExcel(issues) {
+    const workbook = new ExcelJS.Workbook();
+    const filename = `隐患列表_${new Date().toISOString().slice(0,10)}_${Date.now()}.xlsx`;
+    const filepath = path.join(this.exportDir, filename);
+
+    const sheet = workbook.addWorksheet('隐患列表');
+
+    // 表头
+    const headers = [
+      'ID','状态','严重程度','设备名称','位置','厂区','二维码','上报人','上报时间','处理人','处理时间','处理方案','审核意见','问题图数','整改图数'
+    ];
+    sheet.addRow(headers);
+    headers.forEach((_, idx) => {
+      const cell = sheet.getCell(1, idx + 1);
+      cell.font = { bold: true };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+    });
+
+    // 数据行
+    issues.forEach(issue => {
+      const issueImages = (issue.issueImages && Array.isArray(issue.issueImages)) ? issue.issueImages : [];
+      const fixedImages = (issue.fixedImages && Array.isArray(issue.fixedImages)) ? issue.fixedImages : [];
+      sheet.addRow([
+        issue.id,
+        issue.status,
+        issue.severity || '',
+        issue.equipment?.name || '',
+        issue.equipment?.location || '',
+        issue.equipment?.factory?.name || '',
+        issue.equipment?.qrCode || '',
+        issue.reporter?.fullName || '',
+        issue.createdAt ? new Date(issue.createdAt).toLocaleString() : '',
+        issue.handler?.fullName || '',
+        issue.handledAt ? new Date(issue.handledAt).toLocaleString() : '',
+        issue.solution || '',
+        issue.auditNote || '',
+        issueImages.length,
+        fixedImages.length
+      ]);
+    });
+
+    // 列宽
+    const widths = [8,10,10,20,20,14,18,12,20,12,20,30,30,10,10];
+    sheet.columns = widths.map(w => ({ width: w }));
+
+    // 边框
+    this.addBorders(sheet, `A1:O${issues.length + 1}`);
+
+    await workbook.xlsx.writeFile(filepath);
+    return { filepath, filename, downloadUrl: `/api/reports/download/${encodeURIComponent(filename)}` };
+  }
+
+  /**
+   * 生成CSV格式的隐患列表
+   */
+  async generateIssueListCSV(issues) {
+    const filename = `隐患列表_${new Date().toISOString().slice(0,10)}_${Date.now()}.csv`;
+    const filepath = path.join(this.exportDir, filename);
+    const headers = ['ID','状态','严重程度','设备名称','位置','厂区','二维码','上报人','上报时间','处理人','处理时间','处理方案','审核意见','问题图数','整改图数'];
+    const lines = [headers.join(',')];
+    issues.forEach(issue => {
+      const issueImages = (issue.issueImages && Array.isArray(issue.issueImages)) ? issue.issueImages : [];
+      const fixedImages = (issue.fixedImages && Array.isArray(issue.fixedImages)) ? issue.fixedImages : [];
+      const row = [
+        issue.id,
+        issue.status,
+        issue.severity || '',
+        (issue.equipment?.name || '').replace(/,/g,' '),
+        (issue.equipment?.location || '').replace(/,/g,' '),
+        (issue.equipment?.factory?.name || '').replace(/,/g,' '),
+        issue.equipment?.qrCode || '',
+        (issue.reporter?.fullName || '').replace(/,/g,' '),
+        issue.createdAt ? new Date(issue.createdAt).toLocaleString() : '',
+        (issue.handler?.fullName || '').replace(/,/g,' '),
+        issue.handledAt ? new Date(issue.handledAt).toLocaleString() : '',
+        (issue.solution || '').replace(/\r?\n/g,' ').replace(/,/g,' '),
+        (issue.auditNote || '').replace(/\r?\n/g,' ').replace(/,/g,' '),
+        issueImages.length,
+        fixedImages.length
+      ];
+      lines.push(row.join(','));
+    });
+    await fs.writeFile(filepath, lines.join('\n'), 'utf8');
+    return { filepath, filename, downloadUrl: `/api/reports/download/${encodeURIComponent(filename)}` };
+  }
+
+  /**
    * 生成PDF报表（从HTML模板渲染为PDF）
    */
   async generateMonthlyPDFReport(reportData, year, month) {

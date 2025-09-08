@@ -210,6 +210,25 @@ class ValidationHelper {
         'string.max': '备注内容不能超过300个字符',
         'any.required': '备注内容为必填项'
       })
+    }),
+
+    // 隐患导出参数（请求体）
+    export: Joi.object({
+      format: Joi.string().valid('excel', 'csv').default('excel'),
+      // 允许与列表相同的筛选字段
+      status: Joi.string().valid('PENDING', 'IN_PROGRESS', 'PENDING_AUDIT', 'CLOSED', 'REJECTED'),
+      reporterId: Joi.number().integer().positive(),
+      handlerId: Joi.number().integer().positive(),
+      equipmentId: Joi.number().integer().positive(),
+      equipmentTypeId: Joi.number().integer().positive(),
+      factoryId: Joi.number().integer().positive(),
+      factoryIds: Joi.array().items(Joi.number().integer().positive()).min(1),
+      search: Joi.string().max(100).allow('', null),
+      hasImage: Joi.boolean(),
+      overdue: Joi.number().integer().min(1).max(365),
+      severity: Joi.string().valid('LOW', 'MEDIUM', 'HIGH', 'CRITICAL'),
+      startDate: Joi.date().iso(),
+      endDate: Joi.date().iso().min(Joi.ref('startDate'))
     })
   };
 
@@ -298,7 +317,17 @@ class ValidationHelper {
       reporterId: Joi.number().integer().positive(),
       handlerId: Joi.number().integer().positive(),
       equipmentId: Joi.number().integer().positive(),
+      equipmentTypeId: Joi.number().integer().positive(),
       factoryId: Joi.number().integer().positive(),
+      // 多厂区可选
+      factoryIds: Joi.array().items(Joi.number().integer().positive()).min(1),
+      // 模糊搜索：描述/器材名称/位置/二维码/上报人
+      search: Joi.string().max(100).allow('', null),
+      // 是否带图片（问题或整改任一图片）
+      hasImage: Joi.boolean(),
+      // 超期天数（开放天数>overdue，仅统计非已关闭/已驳回）
+      overdue: Joi.number().integer().min(1).max(365),
+      // 近似严重程度（关键词 + 开放天数）
       severity: Joi.string().valid('LOW', 'MEDIUM', 'HIGH', 'CRITICAL')
     })
   };

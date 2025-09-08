@@ -16,11 +16,27 @@ const ValidationHelper = require('../utils/validation.helper');
  * 隐患管理路由定义
  */
 
-// 获取隐患统计信息
-router.get('/stats', issueController.getIssueStats);
+// 获取隐患统计信息（支持筛选参数 + 周期 period）
+router.get('/stats', 
+  ValidationHelper.validateMiddleware(
+    ValidationHelper.querySchema.issueFilter
+      .concat(ValidationHelper.querySchema.dateRange)
+      .keys({ period: require('joi').string().valid('today','week','month','year').default('month') }),
+    'query'
+  ),
+  issueController.getIssueStats
+);
 
-// 获取隐患趋势数据
-router.get('/trend', issueController.getIssueTrend);
+// 获取隐患趋势数据（支持筛选参数 + days）
+router.get('/trend', 
+  ValidationHelper.validateMiddleware(
+    ValidationHelper.querySchema.issueFilter
+      .concat(ValidationHelper.querySchema.dateRange)
+      .keys({ days: require('joi').number().integer().min(1).max(365).default(30) }),
+    'query'
+  ),
+  issueController.getIssueTrend
+);
 
 // 获取隐患列表 (带分页和筛选)
 router.get('/', 
@@ -52,6 +68,15 @@ router.put('/:id/audit',
     'body'
   ),
   issueController.auditIssue
+);
+
+// 导出隐患列表（按当前筛选条件）
+router.post('/export', 
+  ValidationHelper.validateMiddleware(
+    ValidationHelper.issueSchema.export,
+    'body'
+  ),
+  issueController.exportIssueList
 );
 
 // 添加隐患处理备注
