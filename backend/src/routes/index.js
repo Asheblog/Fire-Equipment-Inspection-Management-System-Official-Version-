@@ -103,6 +103,11 @@ router.delete('/factories/:id',
   require('../controllers/user.controller').deleteFactory
 );
 
+// 报表下载（签名直链），放在鉴权前以允许token校验
+router.get('/reports/download/:filename',
+  require('../controllers/report.controller').downloadFile
+);
+
 // 报表和数据看板 (所有角色都可以查看，按权限过滤数据)
 router.use('/reports',
   authenticate,

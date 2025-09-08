@@ -334,13 +334,44 @@ class ReportExportService {
       right: { style: 'thin' }
     };
 
-    sheet.getRange(range).eachCell((cell) => {
-      cell.border = borderStyle;
-    });
+    // ExcelJS 没有 getRange，手动解析范围并逐个单元格设置边框
+    const parseCell = (addr) => {
+      const m = /^([A-Za-z]+)(\d+)$/.exec(addr.trim());
+      if (!m) throw new Error(`无效的范围地址: ${addr}`);
+      const colLetters = m[1].toUpperCase();
+      const row = parseInt(m[2], 10);
+      // 将列字母转换为数字（A -> 1, Z -> 26, AA -> 27 ...）
+      let col = 0;
+      for (let i = 0; i < colLetters.length; i++) {
+        col = col * 26 + (colLetters.charCodeAt(i) - 64);
+      }
+      return { row, col };
+    };
+
+    const parts = range.split(":");
+    if (parts.length !== 2) {
+      // 若仅传入单个单元格，兼容处理
+      const { row, col } = parseCell(range);
+      sheet.getCell(row, col).border = borderStyle;
+      return;
+    }
+
+    const start = parseCell(parts[0]);
+    const end = parseCell(parts[1]);
+    const r1 = Math.min(start.row, end.row);
+    const r2 = Math.max(start.row, end.row);
+    const c1 = Math.min(start.col, end.col);
+    const c2 = Math.max(start.col, end.col);
+
+    for (let r = r1; r <= r2; r++) {
+      for (let c = c1; c <= c2; c++) {
+        sheet.getCell(r, c).border = borderStyle;
+      }
+    }
   }
 
   /**
-   * 生成PDF报表 (简化版本，使用HTML模板)
+   * 生成PDF报表（从HTML模板渲染为PDF）
    */
   async generateMonthlyPDFReport(reportData, year, month) {
     const filename = `月度报表_${year}-${month.toString().padStart(2, '0')}_${Date.now()}.pdf`;
@@ -348,13 +379,41 @@ class ReportExportService {
 
     // 生成HTML模板
     const htmlContent = this.generateHTMLTemplate(reportData, year, month);
-    
-    // 这里简化处理，实际项目中可以使用更专业的PDF生成库
-    const htmlFilename = filename.replace('.pdf', '.html');
-    const htmlFilepath = path.join(this.exportDir, htmlFilename);
-    
-    await fs.writeFile(htmlFilepath, htmlContent, 'utf8');
 
+    try {
+      // 使用 html-pdf-node 将 HTML 渲染为 PDF
+      // 该库内部基于 Puppeteer 渲染，适合较复杂样式
+      const pdf = require('html-pdf-node');
+      const options = {
+        format: 'A4',
+        printBackground: true,
+        preferCSSPageSize: true,
+        margin: { top: '20mm', right: '12mm', bottom: '20mm', left: '12mm' }
+      };
+      const file = { content: htmlContent };
+      const buffer = await pdf.generatePdf(file, options);
+      await fs.writeFile(filepath, buffer);
+
+      return {
+        filepath,
+        filename,
+        downloadUrl: `/api/reports/download/${encodeURIComponent(filename)}`
+      };
+    } catch (e) {
+      // 若PDF生成失败，降级返回HTML以避免整个流程失败
+      console.error('PDF生成失败，回退到HTML导出:', e?.message || e);
+      return this.generateMonthlyHTMLReport(reportData, year, month);
+    }
+  }
+
+  /**
+   * 仅生成HTML报表（用于预览）
+   */
+  async generateMonthlyHTMLReport(reportData, year, month) {
+    const htmlFilename = `月度报表_${year}-${month.toString().padStart(2, '0')}_${Date.now()}.html`;
+    const htmlFilepath = path.join(this.exportDir, htmlFilename);
+    const htmlContent = this.generateHTMLTemplate(reportData, year, month);
+    await fs.writeFile(htmlFilepath, htmlContent, 'utf8');
     return {
       filepath: htmlFilepath,
       filename: htmlFilename,

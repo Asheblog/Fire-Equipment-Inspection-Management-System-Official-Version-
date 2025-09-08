@@ -8,6 +8,7 @@ const ReportExportService = require('../services/report-export.service');
 const ResponseHelper = require('../utils/response.helper');
 const fs = require('fs').promises;
 const path = require('path');
+const DownloadTokenUtil = require('../utils/download-token.util');
 
 class ReportController {
   constructor() {
@@ -203,9 +204,15 @@ class ReportController {
 
       // 获取文件信息
       const stat = await fs.stat(exportResult.filepath);
-      
+
+      // 生成一次性签名直链（默认10分钟有效）
+      const signedUrl = DownloadTokenUtil.generateSignedUrl(exportResult.filename, {
+        userId: req.user?.id,
+        ttlSec: parseInt(process.env.DOWNLOAD_TOKEN_TTL || '600', 10)
+      });
+
       return ResponseHelper.success(res, {
-        downloadUrl: exportResult.downloadUrl,
+        downloadUrl: signedUrl,
         filename: exportResult.filename,
         size: stat.size,
         generatedAt: new Date().toISOString()
@@ -242,11 +249,18 @@ class ReportController {
           return ResponseHelper.badRequest(res, '不支持的报表类型');
       }
 
-      // 生成HTML预览
-      const exportResult = await this.exportService.generateMonthlyPDFReport(reportData, year, month);
+      // 生成HTML预览（仅生成HTML，便于直接在浏览器打开）
+      const exportResult = await this.exportService.generateMonthlyHTMLReport(reportData, year, month);
+
+      // 生成签名直链（inline打开）
+      const signedPreviewUrl = DownloadTokenUtil.generateSignedUrl(exportResult.filename, {
+        userId: req.user?.id,
+        ttlSec: parseInt(process.env.DOWNLOAD_TOKEN_TTL || '600', 10),
+        inline: true
+      });
       
       return ResponseHelper.success(res, {
-        previewUrl: exportResult.downloadUrl,
+        previewUrl: signedPreviewUrl,
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // 24小时后过期
       }, '报表预览生成成功');
 
@@ -263,9 +277,23 @@ class ReportController {
   async downloadFile(req, res) {
     try {
       const { filename } = req.params;
+      const token = req.query?.token;
+      const inline = req.query?.inline === '1';
       
       if (!filename) {
         return ResponseHelper.badRequest(res, '文件名参数必填');
+      }
+      
+      // 优先：校验签名token；失败时再看是否已通过JWT认证（向后兼容）
+      if (token) {
+        try {
+          DownloadTokenUtil.verifyAndConsume(token, filename);
+        } catch (e) {
+          return ResponseHelper.unauthorized(res, '下载链接无效或已过期');
+        }
+      } else if (!req.user) {
+        // 无token且未认证
+        return ResponseHelper.unauthorized(res, '未认证的下载请求');
       }
 
       const fileInfo = this.exportService.getFileInfo(filename);
@@ -285,7 +313,8 @@ class ReportController {
                          'application/octet-stream';
 
       res.setHeader('Content-Type', contentType);
-      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+      const dispositionType = inline ? 'inline' : 'attachment';
+      res.setHeader('Content-Disposition', `${dispositionType}; filename="${encodeURIComponent(filename)}"`);
       
       // 发送文件
       res.sendFile(fileInfo.filepath);

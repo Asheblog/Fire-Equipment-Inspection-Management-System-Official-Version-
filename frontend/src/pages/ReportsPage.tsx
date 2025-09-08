@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { createLogger } from '@/lib/logger'
 import { useAuthStore } from '@/stores/auth'
 import { reportApi } from '@/api'
+// 直链下载已由后端签名URL支持，无需额外鉴权fetch
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -84,7 +85,7 @@ export const ReportsPage: React.FC = () => {
       const response = await reportApi.exportReport(exportRequest)
       
       if (response.success && response.data?.downloadUrl) {
-        // 创建下载链接
+        // 使用签名直链下载（无需Authorization）
         const link = document.createElement('a')
         link.href = response.data.downloadUrl
         link.download = response.data.filename || `月度报表_${selectedYear}-${selectedMonth.toString().padStart(2, '0')}.${format}`
@@ -114,6 +115,7 @@ export const ReportsPage: React.FC = () => {
       })
       
       if (response.success && response.data?.previewUrl) {
+        // 打开签名直链（inline）
         window.open(response.data.previewUrl, '_blank')
       }
     } catch (err: any) {
