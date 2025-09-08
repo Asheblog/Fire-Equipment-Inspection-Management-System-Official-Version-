@@ -8,6 +8,11 @@
 [![Prisma](https://img.shields.io/badge/Prisma-5.7-blueviolet.svg)](https://www.prisma.io/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+## 重要提醒
+
+**在IOS苹果手机上，只支持微信扫码与Safari扫码，不支持夸克/UC等阿里系调用摄像头扫码，安卓手机则无此限制。**
+**摄像头拍摄对焦、闪光灯等功能，后续逐步完善。**
+
 ## 🎯 系统概述
 
 消防器材点检管理系统是一套完整的数字化消防安全管理解决方案，采用**前后端集成部署架构**，支持移动端扫码点检和PC端集中管理。系统特色在于完整的自动化部署体系、企业级安全防护和智能化运维管理。
