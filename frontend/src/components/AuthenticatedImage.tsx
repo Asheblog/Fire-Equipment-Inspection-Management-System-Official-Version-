@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { createLogger } from '@/lib/logger'
-import { api } from '@/api/client'
+import { api, isAuthError, forceLogoutRedirect } from '@/api/client'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 // 删除未使用的图标导入
 
@@ -117,6 +117,8 @@ export function AuthenticatedImage({ src, alt = '', className = '', fallback, en
         log.error('加载认证图片失败', err)
         
         if (isMounted && !abortControllerRef.current?.signal.aborted) {
+          // 401/认证失败：强制退出登录
+          try { if (isAuthError(err)) { forceLogoutRedirect(); return } } catch {}
           // 404错误不重试，其他错误可以重试
           if (err?.response?.status === 404) {
             setError(true)

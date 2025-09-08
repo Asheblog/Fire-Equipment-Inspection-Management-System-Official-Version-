@@ -13,14 +13,14 @@ const apiClient: AxiosInstance = axios.create({
 
 // ---------- Preemptive + automatic refresh logic ----------
 // ==== Added auth failure short-circuit logic START ====
-function forceLogoutRedirect() {
+export function forceLogoutRedirect() {
   const { logout } = useAuthStore.getState() as any
   try { logout() } catch {}
   if (typeof window !== 'undefined') window.location.href = '/login'
 }
 // ==== Added auth failure short-circuit logic END ====
 const PREEMPTIVE_REFRESH_WINDOW_SECONDS = 120 // 若token剩余不足该秒数且有refreshToken则预刷新
-const AUTH_INVALID_CODES = ['TOKEN_INVALID','TOKEN_EXPIRED','REFRESH_FAILED']
+export const AUTH_INVALID_CODES = ['TOKEN_INVALID','TOKEN_EXPIRED','REFRESH_FAILED','TOKEN_BLACKLISTED']
 let isRefreshing = false
 
 interface RefreshQueueItem {
@@ -32,8 +32,15 @@ function flushRefreshQueue(error: any, token: string | null) {
   refreshQueue.forEach(p => { if (error) p.reject(error); else if (token) p.resolve(token); else p.reject(new Error('No token')) })
   refreshQueue = []
 }
-function parseTokenRemaining(token: string): number | null {
+export function parseTokenRemaining(token: string): number | null {
   try { const p = JSON.parse(atob(token.split('.')[1])); return p.exp ? p.exp - Math.floor(Date.now()/1000) : null } catch { return null }
+}
+export function isAuthError(error: any): boolean {
+  try {
+    const status = error?.response?.status
+    const code = error?.response?.data?.error
+    return status === 401 || (typeof code === 'string' && AUTH_INVALID_CODES.includes(code))
+  } catch { return false }
 }
 async function performRefresh(refreshToken: string, setToken: (t:string)=>void, logout: ()=>void) {
   if (isRefreshing) {
@@ -126,8 +133,13 @@ export const api = {
     return filePath.startsWith('/') ? filePath : `/${filePath}`
   },
   getFile: (filePath: string): Promise<Blob> => {
-    const { token } = useAuthStore.getState()
-    return axios.get(filePath, { responseType: 'blob', headers: token ? { Authorization: `Bearer ${token}` } : {}, timeout: 10000 }).then(r => r.data)
+    // 若是绝对URL，直接用裸 axios（避免拼接 baseURL）
+    if (filePath.startsWith('http')) {
+      const { token } = useAuthStore.getState()
+      return axios.get(filePath, { responseType: 'blob', headers: token ? { Authorization: `Bearer ${token}` } : {}, timeout: 10000 }).then(r => r.data)
+    }
+    // 否则走统一拦截器，并将 baseURL 置空，避免 '/api' 前缀导致 '/api/uploads' 404
+    return apiClient.get(filePath, { responseType: 'blob', baseURL: '' }).then((r: any) => r.data)
   }
 }
 

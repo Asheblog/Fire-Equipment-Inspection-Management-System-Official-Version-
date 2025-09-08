@@ -1,4 +1,7 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
+import { useEffect } from 'react'
+import { useAuthStore } from '@/stores/auth'
+import { parseTokenRemaining, forceLogoutRedirect } from '@/api/client'
 import { ProtectedRoute, PublicRoute } from '@/components/ProtectedRoute'
 import { MobileRedirectRoute } from '@/components/MobileRedirectRoute'
 import { AppLayout } from '@/components/layout'
@@ -24,6 +27,21 @@ import { UserRole } from '@/types'
 import CameraDemoPage from '@/pages/CameraDemoPage'
 
 function App() {
+  const { token } = useAuthStore()
+
+  // 全局过期感知：即使无请求也能在过期点退出
+  useEffect(() => {
+    if (!token) return
+    const remain = parseTokenRemaining(token)
+    if (remain === null) return
+    if (remain <= 0) {
+      forceLogoutRedirect()
+      return
+    }
+    const timer = window.setTimeout(() => forceLogoutRedirect(), remain * 1000)
+    return () => window.clearTimeout(timer)
+  }, [token])
+
   return (
     <Router>
       <Routes>

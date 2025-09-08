@@ -532,29 +532,22 @@ const PermissionLogsView: React.FC<{ targetUserId?: number }> = ({ targetUserId 
     
     setLoading(true)
     try {
-      const params = new URLSearchParams({
-        targetUserId: targetUserId.toString(),
-        limit: pagination.limit.toString(),
-        offset: pagination.offset.toString(),
-        ...(filters.actionType && { actionType: filters.actionType }),
-        ...(filters.startDate && { startDate: filters.startDate }),
-        ...(filters.endDate && { endDate: filters.endDate })
-      })
-
-      const response = await fetch(`/api/permissions/logs?${params}`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
-        }
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        setLogs(data.data || [])
-        setPagination(prev => ({ 
-          ...prev, 
-          total: data.total || 0 
-        }))
+      const paramsObj: any = {
+        targetUserId,
+        limit: pagination.limit,
+        offset: pagination.offset,
+        ...(filters.actionType ? { actionType: filters.actionType } : {}),
+        ...(filters.startDate ? { startDate: filters.startDate } : {}),
+        ...(filters.endDate ? { endDate: filters.endDate } : {})
       }
+
+      const res: any = await permissionApi.getPermissionLogs(paramsObj)
+      const payload: any = res?.data ?? res
+      setLogs(payload?.logs || [])
+      setPagination(prev => ({ 
+        ...prev, 
+        total: payload?.total || 0 
+      }))
     } catch (error) {
       console.error('加载权限日志失败:', error)
     } finally {
