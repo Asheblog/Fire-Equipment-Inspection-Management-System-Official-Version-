@@ -39,8 +39,10 @@ class UserService {
       // 构建查询条件
       const where = {};
 
-      // 数据隔离：厂区管理员只能管理自己厂区的用户
-      if (userRole === 'FACTORY_ADMIN' && userFactoryId) {
+      // 数据隔离：厂区管理员只能管理自己授权厂区的用户（支持多厂区）
+      if (userRole === 'FACTORY_ADMIN' && Array.isArray(userFactoryId) && userFactoryId.length > 0) {
+        where.factoryId = { in: userFactoryId };
+      } else if (userRole === 'FACTORY_ADMIN' && userFactoryId) {
         where.factoryId = userFactoryId;
       } else if (factoryId) {
         where.factoryId = factoryId;
@@ -85,6 +87,11 @@ class UserService {
             factory: {
               select: { id: true, name: true }
             },
+            factoryAssignments: {
+              include: {
+                factory: { select: { id: true, name: true } }
+              }
+            },
             _count: {
               select: {
                 inspectionLogs: true,
@@ -99,8 +106,15 @@ class UserService {
 
       const pages = Math.ceil(total / limit);
 
+      const usersMapped = users.map(u => {
+        const factories = (u.factoryAssignments || []).map(a => a.factory).filter(Boolean);
+        const factoryIds = factories.map(f => f.id);
+        const { factoryAssignments, ...rest } = u;
+        return { ...rest, factories, factoryIds };
+      });
+
       return {
-        users,
+        users: usersMapped,
         pagination: {
           total,
           page,
@@ -140,6 +154,11 @@ class UserService {
           factory: {
             select: { id: true, name: true, address: true }
           },
+          factoryAssignments: {
+            include: {
+              factory: { select: { id: true, name: true } }
+            }
+          },
           _count: {
             select: {
               inspectionLogs: true,
@@ -155,12 +174,21 @@ class UserService {
         throw new Error('用户不存在');
       }
 
-      // 数据权限检查：厂区管理员只能查看自己厂区的用户
-      if (userRole === 'FACTORY_ADMIN' && userFactoryId && user.factoryId !== userFactoryId) {
-        throw new Error('无权查看该用户');
+      // 数据权限检查：厂区管理员只能查看自己授权厂区的用户（支持多厂区）
+      if (userRole === 'FACTORY_ADMIN') {
+        if (Array.isArray(userFactoryId) && userFactoryId.length > 0) {
+          if (!userFactoryId.includes(user.factoryId)) {
+            throw new Error('无权查看该用户');
+          }
+        } else if (userFactoryId && user.factoryId !== userFactoryId) {
+          throw new Error('无权查看该用户');
+        }
       }
 
-      return user;
+      const factories = (user.factoryAssignments || []).map(a => a.factory).filter(Boolean);
+      const factoryIds = factories.map(f => f.id);
+      const { factoryAssignments, ...rest } = user;
+      return { ...rest, factories, factoryIds };
     } catch (error) {
       console.error('获取用户详情失败:', error);
       throw error;
@@ -176,28 +204,71 @@ class UserService {
    */
   async createUser(userData, userFactoryId = null, userRole = null) {
     try {
-      const { username, password, fullName, role, factoryId } = userData;
+      const { username, password, fullName, role } = userData;
+      // 兼容：既支持 factoryId，也支持 factoryIds 数组
+      const inputFactoryIds = Array.isArray(userData.factoryIds) && userData.factoryIds.length > 0
+        ? userData.factoryIds
+        : (userData.factoryId ? [userData.factoryId] : []);
 
       // 权限检查：厂区管理员只能在自己厂区创建用户，且不能创建超级管理员
       if (userRole === 'FACTORY_ADMIN') {
         if (role === 'SUPER_ADMIN') {
           throw new Error('无权创建超级管理员');
         }
-        if (userFactoryId && factoryId !== userFactoryId) {
-          throw new Error('只能在自己的厂区创建用户');
+        if (userFactoryId) {
+          const allowed = Array.isArray(userFactoryId) ? userFactoryId : [userFactoryId];
+          const allInAllowed = inputFactoryIds.every(fid => allowed.includes(fid));
+          if (!allInAllowed) {
+            throw new Error('只能在自己的厂区创建用户');
+          }
         }
       }
 
-      // 使用认证服务创建用户
-      const result = await this.authService.createUser({
-        username,
-        password,
-        fullName,
-        role,
-        factoryId: userFactoryId || factoryId
+      // 主厂区取首个
+      const primaryFactoryId = (Array.isArray(userFactoryId) && userFactoryId.length > 0)
+        ? userFactoryId[0]
+        : (userFactoryId || inputFactoryIds[0]);
+
+      // 用户名唯一性检查
+      const duplicateUser = await this.prisma.user.findUnique({ where: { username } });
+      if (duplicateUser) {
+        throw new Error('用户名已存在');
+      }
+
+      // 密码强度校验
+      if (this.authService && typeof this.authService.validatePasswordStrength === 'function') {
+        this.authService.validatePasswordStrength(password)
+      }
+
+      // 加密密码
+      const bcrypt = require('bcryptjs');
+      const passwordHash = await bcrypt.hash(password, 12);
+
+      // 创建用户
+      const created = await this.prisma.user.create({
+        data: {
+          username,
+          passwordHash,
+          fullName,
+          role,
+          factoryId: primaryFactoryId
+        },
+        select: {
+          id: true,
+          username: true,
+          fullName: true,
+          role: true,
+          factoryId: true,
+          isActive: true,
+          createdAt: true
+        }
       });
 
-      return result;
+      // 同步多厂区映射
+      const factoriesToAssign = inputFactoryIds.length > 0 ? inputFactoryIds : (primaryFactoryId ? [primaryFactoryId] : []);
+      await this.syncUserFactories(created.id, factoriesToAssign);
+
+      return created;
     } catch (error) {
       console.error('创建用户失败:', error);
       throw error;
@@ -233,9 +304,15 @@ class UserService {
         if (updateData.role === 'SUPER_ADMIN') {
           throw new Error('无权设置超级管理员角色');
         }
-        // 不能修改用户的厂区
-        if (updateData.factoryId && updateData.factoryId !== userFactoryId) {
-          throw new Error('无权修改用户厂区');
+        // 不能将用户分配到不属于自己的厂区
+        if (updateData.factoryIds || updateData.factoryId) {
+          const allowed = Array.isArray(userFactoryId) ? userFactoryId : (userFactoryId ? [userFactoryId] : []);
+          const requested = Array.isArray(updateData.factoryIds) && updateData.factoryIds.length > 0
+            ? updateData.factoryIds
+            : (updateData.factoryId ? [updateData.factoryId] : []);
+          if (allowed.length > 0 && !requested.every(fid => allowed.includes(fid))) {
+            throw new Error('无权修改为该厂区');
+          }
         }
       }
 
@@ -249,10 +326,23 @@ class UserService {
         }
       }
 
+      // 计算主厂区（如果传了 factoryIds/factoryId 则使用首个）
+      let primaryFactoryId = undefined;
+      if (Array.isArray(updateData.factoryIds) && updateData.factoryIds.length > 0) {
+        primaryFactoryId = updateData.factoryIds[0];
+      } else if (updateData.factoryId) {
+        primaryFactoryId = updateData.factoryId;
+      }
+
       // 更新用户
       const user = await this.prisma.user.update({
         where: { id },
-        data: updateData,
+        data: {
+          username: updateData.username ?? undefined,
+          fullName: updateData.fullName ?? undefined,
+          role: updateData.role ?? undefined,
+          factoryId: primaryFactoryId ?? undefined
+        },
         select: {
           id: true,
           username: true,
@@ -267,10 +357,47 @@ class UserService {
         }
       });
 
+      // 同步多厂区映射（如提供）
+      if ((Array.isArray(updateData.factoryIds) && updateData.factoryIds.length > 0) || updateData.factoryId) {
+        const list = Array.isArray(updateData.factoryIds) && updateData.factoryIds.length > 0
+          ? updateData.factoryIds
+          : [updateData.factoryId];
+        await this.syncUserFactories(id, list);
+      }
+
       return user;
     } catch (error) {
       console.error('更新用户失败:', error);
       throw error;
+    }
+  }
+
+  /**
+   * 同步用户的多厂区映射
+   */
+  async syncUserFactories(userId, factoryIds = []) {
+    // 查询现有
+    const existing = await this.prisma.userFactory.findMany({ where: { userId } });
+    const existingIds = new Set(existing.map(x => x.factoryId));
+    const targetIds = new Set(factoryIds);
+
+    // 需要新增的
+    const toAdd = factoryIds.filter(id => !existingIds.has(id)).map(fid => ({ userId, factoryId: fid }));
+    // 需要删除的
+    const toDelete = existing.filter(x => !targetIds.has(x.factoryId)).map(x => x.id);
+
+    if (toAdd.length > 0) {
+      // SQLite 不支持 skipDuplicates；非 SQLite 可启用以防并发重复
+      const dbUrl = process.env.DATABASE_URL || '';
+      const isSQLite = dbUrl.startsWith('file:') || dbUrl.startsWith('sqlite:');
+      if (isSQLite) {
+        await this.prisma.userFactory.createMany({ data: toAdd });
+      } else {
+        await this.prisma.userFactory.createMany({ data: toAdd, skipDuplicates: true });
+      }
+    }
+    if (toDelete.length > 0) {
+      await this.prisma.userFactory.deleteMany({ where: { id: { in: toDelete } } });
     }
   }
 
@@ -359,7 +486,11 @@ class UserService {
 
       // 权限检查
       if (userRole === 'FACTORY_ADMIN') {
-        if (userFactoryId && existingUser.factoryId !== userFactoryId) {
+        if (Array.isArray(userFactoryId) && userFactoryId.length > 0) {
+          if (!userFactoryId.includes(existingUser.factoryId)) {
+            throw new Error('无权修改该用户状态');
+          }
+        } else if (userFactoryId && existingUser.factoryId !== userFactoryId) {
           throw new Error('无权修改该用户状态');
         }
         // 不能停用超级管理员
@@ -409,7 +540,11 @@ class UserService {
 
       // 权限检查
       if (userRole === 'FACTORY_ADMIN') {
-        if (userFactoryId && existingUser.factoryId !== userFactoryId) {
+        if (Array.isArray(userFactoryId) && userFactoryId.length > 0) {
+          if (!userFactoryId.includes(existingUser.factoryId)) {
+            throw new Error('无权重置该用户密码');
+          }
+        } else if (userFactoryId && existingUser.factoryId !== userFactoryId) {
           throw new Error('无权重置该用户密码');
         }
         // 不能重置超级管理员密码
@@ -711,9 +846,15 @@ class UserService {
         throw new Error('用户不存在');
       }
 
-      // 数据隔离检查：厂区管理员只能删除自己厂区的用户
-      if (userRole === 'FACTORY_ADMIN' && userFactoryId && targetUser.factoryId !== userFactoryId) {
-        throw new Error('无权删除此用户');
+      // 数据隔离检查：厂区管理员只能删除自己授权厂区的用户（支持多厂区）
+      if (userRole === 'FACTORY_ADMIN') {
+        if (Array.isArray(userFactoryId) && userFactoryId.length > 0) {
+          if (!userFactoryId.includes(targetUser.factoryId)) {
+            throw new Error('无权删除此用户');
+          }
+        } else if (userFactoryId && targetUser.factoryId !== userFactoryId) {
+          throw new Error('无权删除此用户');
+        }
       }
 
       // 检查是否存在业务关联数据

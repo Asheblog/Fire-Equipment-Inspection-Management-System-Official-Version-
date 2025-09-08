@@ -12,6 +12,7 @@ import { IssuePage } from '@/pages/IssuePage'
 import { InspectionRecordsPage } from '@/pages/InspectionRecordsPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { UserManagementPage } from '@/pages/UserManagementPage'
+import UserDetailPage from '@/pages/UserDetailPage'
 import { ProfilePage } from '@/pages/ProfilePage'
 import { SystemSettingsPage } from '@/pages/SystemSettingsPage'
 import MyIssuesPage from '@/pages/MyIssuesPage'
@@ -149,6 +150,17 @@ function App() {
             <ProtectedRoute requiredRoles={[UserRole.SUPER_ADMIN]}>
               <AppLayout>
                 <UserManagementPage />
+              </AppLayout>
+            </ProtectedRoute>
+          } 
+        />
+
+        <Route 
+          path="/users/:id" 
+          element={
+            <ProtectedRoute requiredRoles={[UserRole.SUPER_ADMIN]}>
+              <AppLayout>
+                <UserDetailPage />
               </AppLayout>
             </ProtectedRoute>
           } 

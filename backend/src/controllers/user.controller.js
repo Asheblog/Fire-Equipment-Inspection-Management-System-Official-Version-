@@ -89,7 +89,11 @@ class UserController {
       
       // 请求体已在路由层 validateMiddleware 验证，直接使用 req.body
       const validatedData = req.body;
-      const userFactoryId = dataFilter ? dataFilter.factoryId : null;
+      const userFactoryId = (user?.role === 'SUPER_ADMIN')
+        ? null
+        : (Array.isArray(user?.factoryIds) && user.factoryIds.length > 0
+            ? user.factoryIds
+            : (dataFilter ? (dataFilter.factoryIds || (dataFilter.factoryId ? [dataFilter.factoryId] : null)) : null));
       const result = await this.userService.createUser(
         validatedData,
         userFactoryId,
@@ -126,7 +130,11 @@ class UserController {
       }
 
       // 路由层已通过 validateMiddleware 验证并清洗 req.body，避免重复验证
-      const userFactoryId = dataFilter ? dataFilter.factoryId : null;
+      const userFactoryId = (user?.role === 'SUPER_ADMIN')
+        ? null
+        : (Array.isArray(user?.factoryIds) && user.factoryIds.length > 0
+            ? user.factoryIds
+            : (dataFilter ? (dataFilter.factoryIds || (dataFilter.factoryId ? [dataFilter.factoryId] : null)) : null));
       const userData = await this.userService.updateUser(
         parseInt(id),
         req.body,

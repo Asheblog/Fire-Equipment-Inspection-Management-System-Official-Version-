@@ -289,6 +289,14 @@ export const inspectionApi = {
     }
   ): Promise<ApiResponse<InspectionLog>> =>
     api.patch(`/inspections/${id}/finalize`, data)
+  ,
+  // 本月按厂区的点检进度
+  getMonthlyProgress: (params?: { month?: string }): Promise<ApiResponse<{ month: string; total: number; completed: number; pending: number; factories: Array<{ factoryId: number; factoryName: string; total: number; completed: number; pending: number }> }>> =>
+    api.get('/inspections/monthly-progress', { params }),
+
+  // 获取指定厂区本月未完成点检设备
+  getMonthlyPending: (factoryId: number, month?: string): Promise<ApiResponse<Equipment[]>> =>
+    api.get('/inspections/monthly-pending', { params: { factoryId, month } })
 }
 
 // 隐患相关API

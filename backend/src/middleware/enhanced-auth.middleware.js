@@ -55,6 +55,12 @@ class EnhancedAuthMiddleware {
         },
         include: {
           factory: true,
+          // 载入多厂区归属
+          factoryAssignments: {
+            include: {
+              factory: true
+            }
+          },
           roles: {
             include: {
               role: {
@@ -83,6 +89,11 @@ class EnhancedAuthMiddleware {
       // 构建用户权限列表
       const userPermissions = await this.buildUserPermissions(user);
 
+      // 组装多厂区可访问列表（含主厂区 + 额外归属）
+      const assignmentFactoryIds = (user.factoryAssignments || []).map(a => a.factoryId);
+      const assignmentFactories = (user.factoryAssignments || []).map(a => a.factory);
+      const uniqueFactoryIds = Array.from(new Set([user.factoryId, ...assignmentFactoryIds]));
+
       // 将用户信息附加到请求对象
       req.user = {
         id: user.id,
@@ -91,6 +102,9 @@ class EnhancedAuthMiddleware {
         role: user.role, // 保留原有角色字段以兼容现有代码
         factoryId: user.factoryId,
         factory: user.factory,
+        // 多厂区：可访问厂区ID与详情
+        factoryIds: uniqueFactoryIds,
+        factories: [user.factory, ...assignmentFactories.filter(f => !!f)],
         permissions: userPermissions,
         roles: user.roles.map(ur => ur.role),
         tokenId: decoded.jti
@@ -333,7 +347,14 @@ class EnhancedAuthMiddleware {
     const factoryRestrictedResources = ['equipment', 'inspection', 'issue', 'user'];
     
     if (factoryRestrictedResources.includes(resource) && user.role !== 'SUPER_ADMIN') {
-      filter.factoryId = user.factoryId;
+      const ids = Array.isArray(user.factoryIds) && user.factoryIds.length > 0
+        ? user.factoryIds
+        : (user.factoryId ? [user.factoryId] : []);
+      // 为向后兼容，保留单值，同时提供数组
+      if (ids.length === 1) {
+        filter.factoryId = ids[0];
+      }
+      filter.factoryIds = ids;
     }
 
     // 基于权限的额外数据过滤逻辑可在此扩展

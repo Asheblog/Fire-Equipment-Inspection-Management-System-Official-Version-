@@ -42,7 +42,10 @@ class AuthService {
           isActive: true
         },
         include: {
-          factory: true
+          factory: true,
+          factoryAssignments: {
+            include: { factory: true }
+          }
         }
       });
 
@@ -79,11 +82,17 @@ class AuthService {
       });
       
       // 生成JWT Token
+      // 组装多厂区信息
+      const assignmentFactoryIds = (user.factoryAssignments || []).map(a => a.factoryId);
+      const assignmentFactories = (user.factoryAssignments || []).map(a => a.factory);
+      const uniqueFactoryIds = Array.from(new Set([user.factoryId, ...assignmentFactoryIds]));
+
       const tokenData = {
         userId: user.id,
         username: user.username,
         role: effectiveRole,  // 使用有效角色而不是基础角色
         factoryId: user.factoryId,
+        factoryIds: uniqueFactoryIds,
         permissions: userPermissions.allPermissions
       };
       console.log('🎫 [AuthService] 生成JWT Token数据:', tokenData);
@@ -102,7 +111,9 @@ class AuthService {
         expiresIn: this.jwtExpiresIn,
         user: {
           ...userInfo,
-          role: effectiveRole  // 使用确定的有效角色，而不是数据库原始角色
+          role: effectiveRole,  // 使用确定的有效角色，而不是数据库原始角色
+          factoryIds: uniqueFactoryIds,
+          factories: [user.factory, ...assignmentFactories.filter(f => !!f)]
         },
         factory: user.factory
       };
@@ -129,7 +140,8 @@ class AuthService {
           isActive: true
         },
         include: {
-          factory: true
+          factory: true,
+          factoryAssignments: { include: { factory: true } }
         }
       });
 
@@ -160,11 +172,16 @@ class AuthService {
       });
       
       // 生成新的access token
+      const assignmentFactoryIds = (user.factoryAssignments || []).map(a => a.factoryId);
+      const assignmentFactories = (user.factoryAssignments || []).map(a => a.factory);
+      const uniqueFactoryIds = Array.from(new Set([user.factoryId, ...assignmentFactoryIds]));
+
       const tokenData = {
         userId: user.id,
         username: user.username,
         role: effectiveRole,  // 使用有效角色而不是基础角色
         factoryId: user.factoryId,
+        factoryIds: uniqueFactoryIds,
         permissions: userPermissions.allPermissions
       };
       console.log('🎫 [AuthService] Refresh - 生成JWT Token数据:', tokenData);
@@ -177,7 +194,9 @@ class AuthService {
         expiresIn: this.jwtExpiresIn,
         user: {
           ...user,
-          role: effectiveRole  // 也在刷新时返回有效角色
+          role: effectiveRole,  // 也在刷新时返回有效角色
+          factoryIds: uniqueFactoryIds,
+          factories: [user.factory, ...assignmentFactories.filter(f => !!f)]
         }
       };
     } catch (error) {

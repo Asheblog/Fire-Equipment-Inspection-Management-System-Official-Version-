@@ -55,6 +55,12 @@ router.get('/trend', inspectionController.getInspectionTrend);
 // 获取待点检器材列表
 router.get('/pending', inspectionController.getPendingInspections);
 
+// 获取本月按厂区点检进度（聚合）
+router.get('/monthly-progress', inspectionController.getMonthlyProgress);
+
+// 获取指定厂区本月未完成点检设备列表
+router.get('/monthly-pending', inspectionController.getMonthlyPending);
+
 // 获取点检记录列表 (带分页和筛选)
 router.get('/', 
   ValidationHelper.validateMiddleware(

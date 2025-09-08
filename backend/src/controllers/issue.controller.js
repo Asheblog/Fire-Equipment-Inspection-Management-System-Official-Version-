@@ -24,7 +24,11 @@ class IssueController {
       const { page, limit, sortBy, sortOrder, ...filters } = req.query;
       
       const pagination = { page, limit, sortBy, sortOrder };
-      const userFactoryId = dataFilter ? dataFilter.factoryId : null;
+      const userFactoryId = (user?.role === 'SUPER_ADMIN')
+        ? null
+        : (Array.isArray(user?.factoryIds) && user.factoryIds.length > 0
+            ? user.factoryIds
+            : (dataFilter ? (dataFilter.factoryIds || (dataFilter.factoryId ? [dataFilter.factoryId] : null)) : null));
 
       const result = await this.issueService.getIssueList(
         filters,
@@ -61,7 +65,11 @@ class IssueController {
         return ResponseHelper.badRequest(res, '隐患ID格式不正确');
       }
 
-      const userFactoryId = dataFilter ? dataFilter.factoryId : null;
+      const userFactoryId = (user?.role === 'SUPER_ADMIN')
+        ? null
+        : (Array.isArray(user?.factoryIds) && user.factoryIds.length > 0
+            ? user.factoryIds
+            : (dataFilter ? (dataFilter.factoryIds || (dataFilter.factoryId ? [dataFilter.factoryId] : null)) : null));
       const issue = await this.issueService.getIssueById(
         parseInt(id),
         userFactoryId,
@@ -101,7 +109,11 @@ class IssueController {
 
       // 请求体已在路由层验证
       const validatedBody = req.body;
-      const userFactoryId = dataFilter ? dataFilter.factoryId : null;
+      const userFactoryId = (user?.role === 'SUPER_ADMIN')
+        ? null
+        : (Array.isArray(user?.factoryIds) && user.factoryIds.length > 0
+            ? user.factoryIds
+            : (dataFilter ? (dataFilter.factoryIds || (dataFilter.factoryId ? [dataFilter.factoryId] : null)) : null));
       const issue = await this.issueService.handleIssue(
         parseInt(id),
         validatedBody,
@@ -145,7 +157,11 @@ class IssueController {
 
       // 已在路由层验证
       const validatedAudit = req.body;
-      const userFactoryId = dataFilter ? dataFilter.factoryId : null;
+      const userFactoryId = (user?.role === 'SUPER_ADMIN')
+        ? null
+        : (Array.isArray(user?.factoryIds) && user.factoryIds.length > 0
+            ? user.factoryIds
+            : (dataFilter ? (dataFilter.factoryIds || (dataFilter.factoryId ? [dataFilter.factoryId] : null)) : null));
       const issue = await this.issueService.auditIssue(
         parseInt(id),
         validatedAudit,

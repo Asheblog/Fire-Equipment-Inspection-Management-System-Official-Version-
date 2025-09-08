@@ -78,7 +78,11 @@ class InspectionController {
       const { page, limit, sortBy, sortOrder, ...filters } = req.query;
       
       const pagination = { page, limit, sortBy, sortOrder };
-      const userFactoryId = dataFilter ? dataFilter.factoryId : null;
+      const userFactoryId = (user?.role === 'SUPER_ADMIN')
+        ? null
+        : (Array.isArray(user?.factoryIds) && user.factoryIds.length > 0
+            ? user.factoryIds
+            : (dataFilter ? (dataFilter.factoryIds || (dataFilter.factoryId ? [dataFilter.factoryId] : null)) : null));
 
       const result = await this.inspectionService.getInspectionList(
         filters,
@@ -115,7 +119,11 @@ class InspectionController {
         return ResponseHelper.badRequest(res, '点检记录ID格式不正确');
       }
 
-      const userFactoryId = dataFilter ? dataFilter.factoryId : null;
+      const userFactoryId = (user?.role === 'SUPER_ADMIN')
+        ? null
+        : (Array.isArray(user?.factoryIds) && user.factoryIds.length > 0
+            ? user.factoryIds
+            : (dataFilter ? (dataFilter.factoryIds || (dataFilter.factoryId ? [dataFilter.factoryId] : null)) : null));
       const inspection = await this.inspectionService.getInspectionById(
         parseInt(id),
         userFactoryId,
@@ -246,14 +254,18 @@ class InspectionController {
    */
   async getPendingInspections(req, res) {
     try {
-      const { dataFilter } = req;
+      const { user, dataFilter } = req;
       const { days = 30 } = req.query;
 
       if (isNaN(parseInt(days)) || parseInt(days) < 1 || parseInt(days) > 365) {
         return ResponseHelper.badRequest(res, '天数参数必须在1-365之间');
       }
 
-      const factoryId = dataFilter ? dataFilter.factoryId : null;
+      const factoryId = (user?.role === 'SUPER_ADMIN')
+        ? null
+        : (Array.isArray(user?.factoryIds) && user.factoryIds.length > 0
+            ? user.factoryIds
+            : (dataFilter ? (dataFilter.factoryIds || (dataFilter.factoryId ? [dataFilter.factoryId] : null)) : null));
       const equipments = await this.inspectionService.getPendingInspections(
         factoryId,
         parseInt(days)
@@ -262,6 +274,57 @@ class InspectionController {
       return ResponseHelper.success(res, equipments, '待点检器材获取成功');
     } catch (error) {
       console.error('获取待点检器材失败:', error);
+      return ResponseHelper.internalError(res, error.message);
+    }
+  }
+
+  /**
+   * 获取本月按厂区的点检进度
+   * GET /api/inspections/monthly-progress?month=YYYY-MM
+   */
+  async getMonthlyProgress(req, res) {
+    try {
+      const { user, dataFilter } = req;
+      const { month } = req.query;
+      const factoryIds = (user?.role === 'SUPER_ADMIN')
+        ? null
+        : (Array.isArray(user?.factoryIds) && user.factoryIds.length > 0
+            ? user.factoryIds
+            : (dataFilter ? (dataFilter.factoryIds || (dataFilter.factoryId ? [dataFilter.factoryId] : null)) : null));
+
+      const progress = await this.inspectionService.getMonthlyProgress(factoryIds, month || null);
+      return ResponseHelper.success(res, progress, '本月点检进度获取成功');
+    } catch (error) {
+      console.error('获取本月点检进度失败:', error);
+      return ResponseHelper.internalError(res, error.message);
+    }
+  }
+
+  /**
+   * 获取指定厂区本月未完成点检设备
+   * GET /api/inspections/monthly-pending?factoryId=xxx&month=YYYY-MM
+   */
+  async getMonthlyPending(req, res) {
+    try {
+      const { user } = req;
+      const { factoryId, month } = req.query;
+
+      if (!factoryId || isNaN(parseInt(factoryId))) {
+        return ResponseHelper.badRequest(res, 'factoryId 参数缺失或格式不正确');
+      }
+
+      // 非超级管理员需要检查厂区访问权限
+      if (user?.role !== 'SUPER_ADMIN') {
+        const allowed = Array.isArray(user?.factoryIds) ? user.factoryIds : (user?.factoryId ? [user.factoryId] : []);
+        if (!allowed.includes(parseInt(factoryId))) {
+          return ResponseHelper.forbidden(res, '无权访问该厂区');
+        }
+      }
+
+      const list = await this.inspectionService.getMonthlyPendingEquipments(parseInt(factoryId), month || null);
+      return ResponseHelper.success(res, list, '未完成点检设备获取成功');
+    } catch (error) {
+      console.error('获取本月未完成点检设备失败:', error);
       return ResponseHelper.internalError(res, error.message);
     }
   }
@@ -419,6 +482,8 @@ module.exports = {
   getInspectionStats: inspectionController.getInspectionStats.bind(inspectionController),
   getInspectionTrend: inspectionController.getInspectionTrend.bind(inspectionController),
   getPendingInspections: inspectionController.getPendingInspections.bind(inspectionController),
+  getMonthlyProgress: inspectionController.getMonthlyProgress.bind(inspectionController),
+  getMonthlyPending: inspectionController.getMonthlyPending.bind(inspectionController),
 
   // 新增的增量接口导出
   createEmptyInspection: inspectionController.createEmptyInspection.bind(inspectionController),

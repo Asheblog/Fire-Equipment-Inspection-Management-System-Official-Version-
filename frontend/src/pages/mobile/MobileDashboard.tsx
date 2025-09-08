@@ -1,10 +1,10 @@
-import React from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { createLogger } from '@/lib/logger'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/auth'
 import { QRCodeScanner } from '@/components/QRCodeScanner'
 import { extractQrCode } from '@/utils/qrCode'
-import { equipmentApi } from '@/api'
+import { equipmentApi, inspectionApi } from '@/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -19,10 +19,55 @@ import {
   Clock
 } from 'lucide-react'
 
+type MonthlyProgress = {
+  month: string
+  total: number
+  completed: number
+  pending: number
+  factories: Array<{ factoryId: number; factoryName: string; total: number; completed: number; pending: number }>
+}
+
 export const MobileDashboard: React.FC = () => {
   const log = createLogger('MobileDash')
   const navigate = useNavigate()
-  const { user, factory, logout } = useAuthStore()
+  const { user, factory, factories, logout } = useAuthStore()
+  const [progress, setProgress] = useState<MonthlyProgress | null>(null)
+  const [pendingFactoryId, setPendingFactoryId] = useState<number | null>(null)
+  const [pendingList, setPendingList] = useState<any[]>([])
+  const [pendingOpen, setPendingOpen] = useState(false)
+  const pendingRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await inspectionApi.getMonthlyProgress()
+        if (res.success) setProgress(res.data as any)
+      } catch (e) {
+        log.error('加载月度进度失败', e)
+      }
+    }
+    load()
+  }, [])
+
+  const openPending = async (fid: number) => {
+    try {
+      setPendingFactoryId(fid)
+      const res = await inspectionApi.getMonthlyPending(fid)
+      if (res.success) {
+        setPendingList(res.data as any[])
+        setPendingOpen(true)
+      }
+    } catch (e) {
+      log.error('加载未完成列表失败', e)
+    }
+  }
+
+  // 当未完成列表打开时，自动滚动到对应位置
+  useEffect(() => {
+    if (pendingOpen && pendingRef.current) {
+      pendingRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [pendingOpen])
 
   const handleScanSuccess = async (raw: string) => {
     log.debug('扫描成功原始值', { raw })
@@ -76,6 +121,36 @@ export const MobileDashboard: React.FC = () => {
       </header>
 
       <PageContainer variant="mobile">
+        {/* 本月巡检进度 */}
+        <Card className="mb-4">
+          <CardHeader>
+            <CardTitle className="text-lg">本月巡检进度</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {progress ? (
+              <>
+                <div className="text-sm text-muted-foreground">{progress.month}</div>
+                <div className="flex items-center justify-between">
+                  <div>总进度</div>
+                  <div className="text-sm">{progress.completed} / {progress.total}</div>
+                </div>
+                <div className="grid grid-cols-1 gap-2">
+                  {(progress.factories || []).map((f) => (
+                    <div key={f.factoryId} className="flex items-center justify-between border rounded p-2">
+                      <div>
+                        <div className="font-medium text-sm">{f.factoryName}</div>
+                        <div className="text-xs text-muted-foreground">已完成 {f.completed} / {f.total}，未完成 {f.pending}</div>
+                      </div>
+                      <Button size="sm" variant="outline" onClick={() => openPending(f.factoryId)}>查看未完成</Button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="text-sm text-muted-foreground">加载中...</div>
+            )}
+          </CardContent>
+        </Card>
         {/* 用户信息卡片 */}
         <Card>
           <CardContent className="p-4">
@@ -138,6 +213,32 @@ export const MobileDashboard: React.FC = () => {
             </Button>
           </CardContent>
         </Card>
+
+        {/* 未完成列表对话框（简单实现）*/}
+        {pendingOpen && (
+          <Card className="mt-4" ref={pendingRef}>
+            <CardHeader>
+              <CardTitle className="text-lg">未完成点检（{(factories||[]).find(f=>f.id===pendingFactoryId)?.name || factory?.name}）</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {pendingList.length === 0 ? (
+                <div className="text-sm text-muted-foreground">该厂区本月已全部完成</div>
+              ) : (
+                pendingList.slice(0, 20).map((e) => (
+                  <div key={e.id} className="text-sm flex items-center justify-between">
+                    <div>
+                      <div className="font-medium">{e.name}</div>
+                      <div className="text-xs text-muted-foreground">位置：{e.location}</div>
+                    </div>
+                  </div>
+                ))
+              )}
+              <div className="pt-2">
+                <Button className="w-full" variant="secondary" onClick={() => setPendingOpen(false)}>关闭</Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* 扫码提示 */}
         <Card className="bg-blue-50 border-blue-200">

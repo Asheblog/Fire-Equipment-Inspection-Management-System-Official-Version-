@@ -3,6 +3,7 @@
  */
 
 import React, { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { createLogger } from '@/lib/logger'
 import { useAuthStore } from '@/stores/auth'
 import { userApi, factoryApi } from '@/api'
@@ -64,6 +65,7 @@ const roleColors = {
 
 export const UserManagementPage: React.FC = () => {
   const log = createLogger('UserMgmt')
+  const navigate = useNavigate()
   const { isSuperAdmin } = useAuthStore()
   const [users, setUsers] = useState<User[]>([])
   const [factories, setFactories] = useState<Factory[]>([])
@@ -92,7 +94,8 @@ export const UserManagementPage: React.FC = () => {
     password: '',
     fullName: '',
     role: 'INSPECTOR' as UserRole,
-    factoryId: 0
+    factoryId: 0,
+    factoryIds: [] as number[]
   })
   const [factoryForm, setFactoryForm] = useState({
     name: '',
@@ -141,12 +144,22 @@ export const UserManagementPage: React.FC = () => {
   // 创建用户
   const handleCreateUser = async () => {
     try {
-      if (!userForm.username || !userForm.password || !userForm.fullName || !userForm.factoryId) {
+      const chosen = userForm.factoryIds && userForm.factoryIds.length > 0 ? userForm.factoryIds : (userForm.factoryId ? [userForm.factoryId] : [])
+      if (!userForm.username || !userForm.password || !userForm.fullName || chosen.length === 0) {
         toast.error('请填写所有必填字段')
         return
       }
 
-      await userApi.create(userForm)
+      const payload: any = {
+        username: userForm.username,
+        password: userForm.password,
+        fullName: userForm.fullName,
+        role: userForm.role,
+        factoryIds: chosen,
+        factoryId: chosen[0]
+      }
+
+      await userApi.create(payload)
       toast.success('用户创建成功')
       setShowCreateDialog(false)
       resetUserForm()
@@ -168,11 +181,15 @@ export const UserManagementPage: React.FC = () => {
     if (!selectedUser) return
 
     try {
+      const chosen = userForm.factoryIds && userForm.factoryIds.length > 0
+        ? userForm.factoryIds
+        : (userForm.factoryId ? [userForm.factoryId] : (selectedUser.factoryIds && selectedUser.factoryIds.length > 0 ? selectedUser.factoryIds : [selectedUser.factoryId]))
       const updateData = {
         username: userForm.username,
         fullName: userForm.fullName,
         role: userForm.role,
-        factoryId: userForm.factoryId || selectedUser.factoryId
+        factoryId: chosen[0],
+        factoryIds: chosen
       }
 
       await userApi.update(selectedUser.id, updateData)
@@ -363,7 +380,8 @@ export const UserManagementPage: React.FC = () => {
       password: '',
       fullName: '',
       role: 'INSPECTOR' as UserRole,
-      factoryId: 0
+      factoryId: 0,
+      factoryIds: []
     })
   }
 
@@ -375,7 +393,8 @@ export const UserManagementPage: React.FC = () => {
       password: '',
       fullName: user.fullName,
       role: user.role,
-      factoryId: user.factoryId
+      factoryId: user.factoryId,
+      factoryIds: (user.factoryIds && user.factoryIds.length > 0) ? user.factoryIds : (user.factoryId ? [user.factoryId] : [])
     })
     setShowEditDialog(true)
   }
@@ -652,7 +671,7 @@ export const UserManagementPage: React.FC = () => {
                           {roleLabels[user.role]}
                         </Badge>
                       </TableCell>
-                      <TableCell>{user.factory?.name || '未分配'}</TableCell>
+                      <TableCell>{Array.isArray(user.factories) && user.factories.length > 0 ? user.factories.map(f=>f.name).join('、') : (user.factory?.name || '未分配')}</TableCell>
                       <TableCell>
                         <Badge variant={user.isActive ? 'default' : 'secondary'}>
                           {user.isActive ? '启用' : '禁用'}
@@ -680,6 +699,10 @@ export const UserManagementPage: React.FC = () => {
                             <DropdownMenuItem onClick={() => openEditDialog(user)}>
                               <Edit className="mr-2 h-4 w-4" />
                               编辑
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => navigate(`/users/${user.id}`)}>
+                              <Settings className="mr-2 h-4 w-4" />
+                              详情
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => openResetPasswordDialog(user)}>
                               <Key className="mr-2 h-4 w-4" />
@@ -818,25 +841,30 @@ export const UserManagementPage: React.FC = () => {
                 </SelectContent>
               </Select>
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="factory" className="text-right">
-                所属厂区 *
-              </Label>
-              <Select 
-                value={userForm.factoryId.toString()} 
-                onValueChange={(value) => setUserForm(prev => ({ ...prev, factoryId: parseInt(value) }))}
-              >
-                <SelectTrigger className="col-span-3">
-                  <SelectValue placeholder="选择厂区" />
-                </SelectTrigger>
-                <SelectContent>
-                  {factories.map((factory) => (
-                    <SelectItem key={factory.id} value={factory.id.toString()}>
-                      {factory.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-4 items-start gap-4">
+              <Label className="text-right pt-2">所属厂区 *</Label>
+              <div className="col-span-3 grid grid-cols-2 gap-2 max-h-40 overflow-auto border rounded p-2">
+                {factories.map((f) => {
+                  const checked = (userForm.factoryIds || []).includes(f.id)
+                  return (
+                    <label key={f.id} className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => {
+                          setUserForm(prev => {
+                            const set = new Set(prev.factoryIds || [])
+                            if (e.target.checked) set.add(f.id); else set.delete(f.id)
+                            const arr = Array.from(set)
+                            return { ...prev, factoryIds: arr, factoryId: arr[0] || 0 }
+                          })
+                        }}
+                      />
+                      {f.name}
+                    </label>
+                  )
+                })}
+              </div>
             </div>
           </div>
           <DialogFooter>
@@ -898,25 +926,30 @@ export const UserManagementPage: React.FC = () => {
                 </SelectContent>
               </Select>
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="edit-factory" className="text-right">
-                所属厂区 *
-              </Label>
-              <Select 
-                value={userForm.factoryId.toString()} 
-                onValueChange={(value) => setUserForm(prev => ({ ...prev, factoryId: parseInt(value) }))}
-              >
-                <SelectTrigger className="col-span-3">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {factories.map((factory) => (
-                    <SelectItem key={factory.id} value={factory.id.toString()}>
-                      {factory.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-4 items-start gap-4">
+              <Label className="text-right pt-2">所属厂区 *</Label>
+              <div className="col-span-3 grid grid-cols-2 gap-2 max-h-40 overflow-auto border rounded p-2">
+                {factories.map((f) => {
+                  const checked = (userForm.factoryIds || []).includes(f.id)
+                  return (
+                    <label key={f.id} className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => {
+                          setUserForm(prev => {
+                            const set = new Set(prev.factoryIds || [])
+                            if (e.target.checked) set.add(f.id); else set.delete(f.id)
+                            const arr = Array.from(set)
+                            return { ...prev, factoryIds: arr, factoryId: arr[0] || 0 }
+                          })
+                        }}
+                      />
+                      {f.name}
+                    </label>
+                  )
+                })}
+              </div>
             </div>
           </div>
           <DialogFooter>

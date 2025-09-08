@@ -35,7 +35,11 @@ class EquipmentController {
       const { page, limit, sortBy, sortOrder, ...filters } = queryValidation.data;
       
       const pagination = { page, limit, sortBy, sortOrder };
-      const userFactoryId = dataFilter ? dataFilter.factoryId : null;
+      const userFactoryId = (user?.role === 'SUPER_ADMIN')
+        ? null
+        : (Array.isArray(user?.factoryIds) && user.factoryIds.length > 0
+            ? user.factoryIds
+            : (dataFilter ? (dataFilter.factoryIds || (dataFilter.factoryId ? [dataFilter.factoryId] : null)) : null));
 
       const result = await this.equipmentService.getEquipmentList(
         filters,
@@ -72,7 +76,11 @@ class EquipmentController {
         return ResponseHelper.badRequest(res, '器材ID格式不正确');
       }
 
-      const userFactoryId = dataFilter ? dataFilter.factoryId : null;
+      const userFactoryId = (user?.role === 'SUPER_ADMIN')
+        ? null
+        : (Array.isArray(user?.factoryIds) && user.factoryIds.length > 0
+            ? user.factoryIds
+            : (dataFilter ? (dataFilter.factoryIds || (dataFilter.factoryId ? [dataFilter.factoryId] : null)) : null));
       const equipment = await this.equipmentService.getEquipmentById(
         parseInt(id),
         userFactoryId
@@ -103,7 +111,11 @@ class EquipmentController {
         return ResponseHelper.badRequest(res, '二维码不能为空');
       }
 
-      const userFactoryId = dataFilter ? dataFilter.factoryId : null;
+      const userFactoryId = (user?.role === 'SUPER_ADMIN')
+        ? null
+        : (Array.isArray(user?.factoryIds) && user.factoryIds.length > 0
+            ? user.factoryIds
+            : (dataFilter ? (dataFilter.factoryIds || (dataFilter.factoryId ? [dataFilter.factoryId] : null)) : null));
       const equipment = await this.equipmentService.getEquipmentByQR(qrCode, userFactoryId);
       return ResponseHelper.success(res, equipment, '器材信息获取成功');
     } catch (error) {

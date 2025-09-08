@@ -8,6 +8,7 @@ interface AuthState {
   isAuthenticated: boolean
   user: User | null
   factory: Factory | null
+  factories?: Factory[]
   token: string | null
   refreshToken: string | null
   
@@ -34,6 +35,7 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: false,
       user: null,
       factory: null,
+      factories: [],
       token: null,
       refreshToken: null,
       
@@ -48,6 +50,7 @@ export const useAuthStore = create<AuthState>()(
           isAuthenticated: true,
           user,
           factory,
+          factories: user?.factories || (factory ? [factory] : []),
           token,
           refreshToken
         })
@@ -99,7 +102,10 @@ export const useAuthStore = create<AuthState>()(
         // 超级管理员可以访问所有厂区
         if (user.role === 'SUPER_ADMIN') return true
         
-        // 其他角色只能访问自己所属的厂区
+        // 其他角色：若返回多厂区列表则使用列表判断
+        if (Array.isArray(user.factoryIds) && user.factoryIds.length > 0) {
+          return user.factoryIds.includes(factoryId)
+        }
         return user.factoryId === factoryId
       },
       
@@ -126,6 +132,7 @@ export const useAuthStore = create<AuthState>()(
         isAuthenticated: state.isAuthenticated,
         user: state.user,
         factory: state.factory,
+        factories: state.factories,
         token: state.token,
         refreshToken: state.refreshToken
       })

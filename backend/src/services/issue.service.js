@@ -52,8 +52,11 @@ class IssueService {
       // 构建查询条件
       const where = {};
 
-      // 数据隔离
-      if (userFactoryId) {
+      // 数据隔离（支持多厂区）
+      if (Array.isArray(userFactoryId) && userFactoryId.length > 0) {
+        where.equipment = { factoryId: { in: userFactoryId } };
+        console.log('🔍 [隐患服务调试] 添加厂区过滤条件:', { factoryIds: userFactoryId });
+      } else if (userFactoryId) {
         where.equipment = { factoryId: userFactoryId };
         console.log('🔍 [隐患服务调试] 添加厂区过滤条件:', { factoryId: userFactoryId });
       } else {
@@ -307,8 +310,12 @@ class IssueService {
         throw new Error('隐患不存在');
       }
 
-      // 数据权限检查
-      if (userFactoryId && issue.equipment.factoryId !== userFactoryId) {
+      // 数据权限检查（支持多厂区）
+      if (Array.isArray(userFactoryId) && userFactoryId.length > 0) {
+        if (!userFactoryId.includes(issue.equipment.factoryId)) {
+          throw new Error('无权查看该隐患');
+        }
+      } else if (userFactoryId && issue.equipment.factoryId !== userFactoryId) {
         throw new Error('无权查看该隐患');
       }
 
@@ -379,7 +386,11 @@ class IssueService {
       }
 
       // 数据权限检查
-      if (userFactoryId && existingIssue.equipment.factoryId !== userFactoryId) {
+      if (Array.isArray(userFactoryId) && userFactoryId.length > 0) {
+        if (!userFactoryId.includes(existingIssue.equipment.factoryId)) {
+          throw new Error('无权处理该隐患');
+        }
+      } else if (userFactoryId && existingIssue.equipment.factoryId !== userFactoryId) {
         throw new Error('无权处理该隐患');
       }
 
@@ -462,7 +473,11 @@ class IssueService {
         }
 
         // 数据权限检查
-        if (userFactoryId && existingIssue.equipment.factoryId !== userFactoryId) {
+        if (Array.isArray(userFactoryId) && userFactoryId.length > 0) {
+          if (!userFactoryId.includes(existingIssue.equipment.factoryId)) {
+            throw new Error('无权审核该隐患');
+          }
+        } else if (userFactoryId && existingIssue.equipment.factoryId !== userFactoryId) {
           throw new Error('无权审核该隐患');
         }
 
@@ -578,7 +593,11 @@ class IssueService {
       }
 
       // 数据权限检查
-      if (userFactoryId && issue.equipment.factoryId !== userFactoryId) {
+      if (Array.isArray(userFactoryId) && userFactoryId.length > 0) {
+        if (!userFactoryId.includes(issue.equipment.factoryId)) {
+          throw new Error('无权添加备注');
+        }
+      } else if (userFactoryId && issue.equipment.factoryId !== userFactoryId) {
         throw new Error('无权添加备注');
       }
 

@@ -38,8 +38,10 @@ class EquipmentService {
       // 构建查询条件
       const where = {};
 
-      // 数据隔离：只能查看自己厂区的器材
-      if (userFactoryId) {
+      // 数据隔离：只能查看授权厂区的器材（支持多厂区）
+      if (Array.isArray(userFactoryId) && userFactoryId.length > 0) {
+        where.factoryId = { in: userFactoryId };
+      } else if (userFactoryId) {
         where.factoryId = userFactoryId;
       } else if (factoryId) {
         where.factoryId = factoryId;
@@ -154,8 +156,10 @@ class EquipmentService {
     try {
       const where = { id };
       
-      // 数据隔离
-      if (userFactoryId) {
+      // 数据隔离（支持多厂区）
+      if (Array.isArray(userFactoryId) && userFactoryId.length > 0) {
+        where.factoryId = { in: userFactoryId };
+      } else if (userFactoryId) {
         where.factoryId = userFactoryId;
       }
 
@@ -239,10 +243,7 @@ class EquipmentService {
         throw new Error('二维码格式不正确');
       }
 
-      // 检查厂区权限
-      if (userFactoryId && !QRCodeGenerator.validateFactoryOwnership(qrCode, userFactoryId)) {
-        throw new Error('无权访问该器材');
-      }
+      // 厂区权限校验延后到查询出器材后基于 factoryId 判断（支持多厂区）
 
       // 获取所有可能的查询格式
       const queryFormats = QRCodeGenerator.getQRCodeQueryFormats(qrCode);
@@ -269,6 +270,14 @@ class EquipmentService {
 
         if (equipment) {
           console.log(`✅ [getEquipmentByQR] 使用格式 "${format}" 找到器材:`, equipment.name);
+          // 查询到器材后再校验厂区权限
+          if (Array.isArray(userFactoryId) && userFactoryId.length > 0) {
+            if (!userFactoryId.includes(equipment.factoryId)) {
+              throw new Error('无权访问该器材');
+            }
+          } else if (userFactoryId && equipment.factoryId !== userFactoryId) {
+            throw new Error('无权访问该器材');
+          }
           break;
         } else {
           console.log(`❌ [getEquipmentByQR] 格式 "${format}" 未找到器材`);
@@ -1082,10 +1091,7 @@ class EquipmentService {
         throw new Error('二维码格式不正确');
       }
 
-      // 2. 检查厂区权限
-      if (userFactoryId && !QRCodeGenerator.validateFactoryOwnership(qrCode, userFactoryId)) {
-        throw new Error('无权访问该器材');
-      }
+      // 2. 厂区权限检查延后到查询出器材后判断（支持多厂区）
 
       // 3. 获取扫描的器材信息（支持多种格式）
       const queryFormats = QRCodeGenerator.getQRCodeQueryFormats(qrCode);
@@ -1123,11 +1129,20 @@ class EquipmentService {
         throw new Error('器材不存在');
       }
 
+      // 权限检查：确认扫描的器材所在厂区在授权范围内
+      if (Array.isArray(userFactoryId) && userFactoryId.length > 0) {
+        if (!userFactoryId.includes(sourceEquipment.factoryId)) {
+          throw new Error('无权访问该器材');
+        }
+      } else if (userFactoryId && sourceEquipment.factoryId !== userFactoryId) {
+        throw new Error('无权访问该器材');
+      }
+
       // 4. 查询相同位置的所有器材
       const equipments = await this.prisma.equipment.findMany({
         where: {
           location: sourceEquipment.location,
-          factoryId: userFactoryId || sourceEquipment.factoryId,
+          factoryId: sourceEquipment.factoryId,
           status: { not: 'SCRAPPED' } // 排除已报废的器材
         },
         include: {

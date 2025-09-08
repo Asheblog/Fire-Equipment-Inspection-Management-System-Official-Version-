@@ -14,6 +14,9 @@ export interface User {
   fullName: string
   role: UserRole
   factoryId: number
+  // 多厂区支持：可访问的厂区ID列表与详情（后端兼容返回）
+  factoryIds?: number[]
+  factories?: Factory[]
   factory?: Factory
   isActive: boolean
   createdAt: string

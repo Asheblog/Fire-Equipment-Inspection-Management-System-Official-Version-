@@ -33,6 +33,8 @@ model Factory {
   
   // 关系定义
   users      User[]
+  // 多厂区归属：用户-厂区多对多关联
+  userAssignments UserFactory[]
   equipments Equipment[]
   auditLogs  AuditLog[]
   securityLogs SecurityLog[]
@@ -54,6 +56,8 @@ model User {
   
   // 关系定义
   factory           Factory         @relation(fields: [factoryId], references: [id], onDelete: Cascade)
+  // 多厂区归属：用户-厂区多对多关联
+  factoryAssignments UserFactory[]
   inspectionLogs    InspectionLog[]
   reportedIssues    Issue[]         @relation("ReportedBy")
   handledIssues     Issue[]         @relation("HandledBy")
@@ -74,6 +78,22 @@ model User {
   // 索引优化 - 基于厂区和角色的查询优化
   @@index([factoryId, role])
   @@map("users")
+}
+
+// 用户-厂区 多对多映射表（支持一个用户归属多个厂区）
+model UserFactory {
+  id         Int      @id @default(autoincrement())
+  userId     Int      @map("user_id")
+  factoryId  Int      @map("factory_id")
+  assignedAt DateTime @default(now()) @map("assigned_at")
+
+  // 关系
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  factory Factory @relation(fields: [factoryId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, factoryId])
+  @@index([factoryId, userId])
+  @@map("user_factories")
 }
 
 // JWT令牌黑名单表 - 存储失效的JWT令牌

@@ -20,6 +20,7 @@
     "db:setup": "npm run db:generate && npm run db:push && npm run db:seed",
     "db:migrate-images": "node scripts/migrate-multi-images.js",
     "db:init-permissions": "node src/scripts/init-permissions.js",
+    "db:migrate:user-factories": "node src/scripts/migrate-user-factories.js",
     "update-qr-codes": "node src/scripts/update-qr-codes.js",
     "setup": "node setup-and-run.js",
     "init": "npm run setup",

@@ -215,8 +215,10 @@ class InspectionService {
       // 构建查询条件
       const where = {};
 
-      // 数据隔离
-      if (userFactoryId) {
+      // 数据隔离（支持多厂区）
+      if (Array.isArray(userFactoryId) && userFactoryId.length > 0) {
+        where.equipment = { factoryId: { in: userFactoryId } };
+      } else if (userFactoryId) {
         where.equipment = { factoryId: userFactoryId };
       }
 
@@ -374,8 +376,12 @@ class InspectionService {
         throw new Error('点检记录不存在');
       }
 
-      // 数据权限检查
-      if (userFactoryId && inspection.equipment.factoryId !== userFactoryId) {
+      // 数据权限检查（支持多厂区）
+      if (Array.isArray(userFactoryId) && userFactoryId.length > 0) {
+        if (!userFactoryId.includes(inspection.equipment.factoryId)) {
+          throw new Error('无权查看该点检记录');
+        }
+      } else if (userFactoryId && inspection.equipment.factoryId !== userFactoryId) {
         throw new Error('无权查看该点检记录');
       }
 
@@ -594,7 +600,9 @@ class InspectionService {
         ]
       };
 
-      if (factoryId) {
+      if (Array.isArray(factoryId) && factoryId.length > 0) {
+        where.factoryId = { in: factoryId };
+      } else if (factoryId) {
         where.factoryId = factoryId;
       }
 
@@ -631,6 +639,105 @@ class InspectionService {
       console.error('获取待点检器材失败:', error);
       throw new Error('获取待点检器材失败');
     }
+  }
+
+  /**
+   * 获取本月按厂区的点检完成进度
+   * @param {number[]|number|null} factoryIds - 授权厂区ID列表（可为单个或数组，null 表示不限制）
+   * @param {string|null} month - 月份 YYYY-MM，默认当前月
+   * @returns {Promise<Object>} 进度汇总
+   */
+  async getMonthlyProgress(factoryIds = null, month = null) {
+    const now = new Date();
+    const [y, m] = month && /^\d{4}-\d{2}$/.test(month)
+      ? month.split('-').map(n => parseInt(n, 10))
+      : [now.getFullYear(), now.getMonth() + 1];
+
+    const start = new Date(y, m - 1, 1, 0, 0, 0);
+    const end = new Date(y, m, 1, 0, 0, 0);
+
+    const inFilter = Array.isArray(factoryIds) ? factoryIds : (factoryIds ? [factoryIds] : undefined);
+
+    // 获取可见厂区
+    const factories = await this.prisma.factory.findMany({
+      where: inFilter ? { id: { in: inFilter } } : {},
+      select: { id: true, name: true }
+    });
+
+    let totalAll = 0;
+    let completedAll = 0;
+
+    const byFactory = [];
+    for (const f of factories) {
+      // 总设备数（排除报废）
+      const total = await this.prisma.equipment.count({
+        where: { factoryId: f.id, status: { not: 'SCRAPPED' } }
+      });
+
+      // 本月已点检的去重设备数量
+      const inspected = await this.prisma.inspectionLog.findMany({
+        where: {
+          inspectionTime: { gte: start, lt: end },
+          equipment: { factoryId: f.id }
+        },
+        select: { equipmentId: true }
+      });
+      const completed = new Set(inspected.map(x => x.equipmentId)).size;
+
+      byFactory.push({
+        factoryId: f.id,
+        factoryName: f.name,
+        total,
+        completed,
+        pending: Math.max(0, total - completed)
+      });
+
+      totalAll += total;
+      completedAll += completed;
+    }
+
+    return {
+      month: `${y}-${String(m).padStart(2, '0')}`,
+      total: totalAll,
+      completed: completedAll,
+      pending: Math.max(0, totalAll - completedAll),
+      factories: byFactory
+    };
+  }
+
+  /**
+   * 获取指定厂区本月未完成点检的设备列表
+   * @param {number} factoryId - 厂区ID
+   * @param {string|null} month - YYYY-MM
+   * @returns {Promise<Array>} 设备列表
+   */
+  async getMonthlyPendingEquipments(factoryId, month = null) {
+    const now = new Date();
+    const [y, m] = month && /^\d{4}-\d{2}$/.test(month)
+      ? month.split('-').map(n => parseInt(n, 10))
+      : [now.getFullYear(), now.getMonth() + 1];
+
+    const start = new Date(y, m - 1, 1, 0, 0, 0);
+    const end = new Date(y, m, 1, 0, 0, 0);
+
+    const equipments = await this.prisma.equipment.findMany({
+      where: {
+        factoryId,
+        status: { not: 'SCRAPPED' },
+        NOT: {
+          inspectionLogs: {
+            some: { inspectionTime: { gte: start, lt: end } }
+          }
+        }
+      },
+      include: {
+        equipmentType: { select: { id: true, name: true } },
+        factory: { select: { id: true, name: true } }
+      },
+      orderBy: [{ name: 'asc' }]
+    });
+
+    return equipments;
   }
 
   /**

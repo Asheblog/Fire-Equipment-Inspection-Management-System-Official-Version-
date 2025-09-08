@@ -241,11 +241,24 @@ class ValidationHelper {
         'any.only': '角色只能是: INSPECTOR, FACTORY_ADMIN, SUPER_ADMIN',
         'any.required': '角色为必填项'
       }),
-      factoryId: Joi.number().integer().positive().required().messages({
-        'number.base': '厂区ID必须是数字',
-        'number.positive': '厂区ID必须是正数',
-        'any.required': '厂区为必填项'
-      })
+      // 支持多厂区：至少提供一个厂区
+      factoryIds: Joi.array().items(Joi.number().integer().positive()).min(1).messages({
+        'array.min': '至少选择一个厂区'
+      }),
+      factoryId: Joi.number().integer().positive()
+    }).custom((value, helpers) => {
+      if ((!value.factoryIds || value.factoryIds.length === 0) && !value.factoryId) {
+        return helpers.error('any.custom', { message: '至少选择一个厂区' });
+      }
+      return value;
+    }, 'factory selection'),
+
+    update: Joi.object({
+      username: Joi.string().alphanum().min(3).max(30),
+      fullName: Joi.string().min(2).max(50),
+      role: Joi.string().valid('INSPECTOR', 'FACTORY_ADMIN', 'SUPER_ADMIN'),
+      factoryId: Joi.number().integer().positive(),
+      factoryIds: Joi.array().items(Joi.number().integer().positive()).min(1)
     })
   };
 
