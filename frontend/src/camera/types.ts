@@ -30,6 +30,31 @@ export interface StabilizationConfig {
   timeoutMs?: number;           // 默认 1500
 }
 
+export type FlashMode = 'off' | 'burst' | 'torch';
+
+/**
+ * 拓展：摄像头能力抽象
+ * （仅在支持时才显示 UI，不支持的浏览器不暴露按钮）
+ */
+export interface TrackControlsSupport {
+  torch: boolean;
+  focus: {
+    singleShot: boolean;
+    manual: { min: number; max: number } | null;
+  };
+}
+
+export interface TrackControls {
+  hasTorch(): boolean;
+  setTorch(on: boolean): Promise<boolean>;
+  getSupport(): TrackControlsSupport;
+  applySingleShotFocus(): Promise<boolean>;
+  /**
+   * ratio: 0~1 映射到可用对焦距离（0 = 最小 / 远；1 = 最大 / 近；具体取决于浏览器实现）
+   */
+  setManualFocus(ratio: number): Promise<boolean>;
+}
+
 export interface SessionOptions {
   facingMode?: 'environment' | 'user';
   orientationPolicy?: OrientationPolicy;
@@ -41,6 +66,12 @@ export interface SessionOptions {
   watermark?: boolean;
   watermarkBuilder?: () => string;
   debug?: boolean;          // 控制台输出调试信息
+
+  /**
+   * 初始闪光模式（仅影响 UI 初始化，不是底层约束）
+   * 'torch' 模式仅在设备支持连续补光时可用
+   */
+  initialFlashMode?: FlashMode;
 }
 
 export interface CaptureMeta {
@@ -130,6 +161,10 @@ export interface StreamSession {
   getVideoEl(): HTMLVideoElement;
   capture(): Promise<CaptureResult>;
   destroy(): void;
+  /**
+   * 可能返回 null（例如非常旧的浏览器没有 getCapabilities）
+   */
+  getTrackControls(): TrackControls | null;
 }
 
 export interface CameraDeviceManager {

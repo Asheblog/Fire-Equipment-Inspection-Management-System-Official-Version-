@@ -5,12 +5,14 @@ import type {
   SessionStateError,
   SessionStateReady,
   SessionStateStabilizing,
-  CaptureResult
+  CaptureResult,
+  TrackControls
 } from "./types";
 import { CameraErrorCode } from "./types";
 import { processFrame } from "./frameProcessor";
 import { createCameraError } from "./errors";
 import type { ConstraintCandidate } from "./constraints";
+import { createTrackControls } from "./trackControls";
 
 /**
  * StreamSession 实现
@@ -39,6 +41,7 @@ interface InternalContext {
   rafId?: number;
   stopped: boolean;
   debug?: boolean;
+  trackControls?: TrackControls | null;
 }
 
 function setState(ctx: InternalContext, next: SessionState) {
@@ -172,6 +175,13 @@ export function createStreamSession(params: {
     });
   });
 
+  // 初始化可选的 trackControls（能力增强：闪光/对焦）
+  try {
+    ctx.trackControls = createTrackControls(track);
+  } catch {
+    ctx.trackControls = null;
+  }
+
   // 等待元数据
   const init = async () => {
     try {
@@ -254,6 +264,7 @@ export function createStreamSession(params: {
     onStateChange,
     getVideoEl: () => video,
     capture,
-    destroy
+    destroy,
+    getTrackControls: () => ctx.trackControls || null
   };
 }

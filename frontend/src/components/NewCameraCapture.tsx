@@ -5,34 +5,24 @@ import type {
   OrientationPolicy,
   AspectPolicy,
   CaptureResult,
-  StreamSession
+  StreamSession,
+  FlashMode,
+  TrackControls,
+  TrackControlsSupport
 } from '@/camera/types';
 import { CameraErrorCode } from '@/camera/types';
 
 /**
  * 新版拍照组件 NewCameraCapture
- *
- * 设计要点：
- *  - 不再使用任何全局 FIRST_CAPTURE_PROFILE / 方向锁定副作用
- *  - 通过底层 session 状态机 (idle → requesting → starting → stabilizing → ready → error → destroyed)
- *  - 仅在 capture() 时进行像素级旋转/裁剪，预览保持真实原始流方向，避免 CSS rotate 侧效
- *  - iOS: 利用多帧稳定策略，等待尺寸稳定（默认 minStableFrames=3 / timeout 1500ms）
- *
- * 与旧 CameraCapture 差异：
- *  - props 更精简，可选地兼容旧调用场景（compact / captureLabel / fallbackLabel 等）
- *  - 不再提供 stopAfterCapture（由父层控制：若需持续拍摄则保持 session）
- *
- * Props:
- *  - onCapture(file: File, meta?) 产出回调
- *  - orientationPolicy: 'auto' | 'lockPortrait' | 'lockLandscape' | 'followDevice'
- *  - aspectPolicy: { type: 'native' } | { type: 'force', value: number }
- *  - maxWidth / quality / watermark / watermarkBuilder
- *  - facingMode: 'environment' | 'user'
- *  - debug: 输出底层调试（console + overlay）
- *  - autoStart: 是否自动启动
- *  - compact: UI 紧凑模式（按钮布局更精简，常用于弹窗内连续拍摄）
- *  - captureLabel / fallbackLabel
- *  - allowFileFallback: 是否允许文件选择作为兜底
+ * 本次增强：
+ *  - 新增闪光模式：off / burst / torch
+ *    * off: 不补光
+ *    * burst: 拍照时若支持 torch，临时点亮 ~100ms 后拍照再关闭（无支持则静默降级）
+ *    * torch: 持续点亮（仅硬件支持）
+ *  - 新增对焦交互：
+ *    * single-shot: 支持则点击画面触发一次对焦
+ *    * manual: 支持 focusDistance 范围时，点击垂直位置映射 0~1 设置焦距
+ *  - 不支持的能力不显示相应按钮/交互
  */
 
 export interface NewCameraCaptureProps {
@@ -56,6 +46,9 @@ export interface NewCameraCaptureProps {
 
   /** 连续拍摄模式：默认 true（保持同一流），如果为 false 每次成功拍摄后销毁流再等待用户重新启动 */
   continuous?: boolean;
+
+  /** 初始闪光模式（可选） */
+  initialFlashMode?: FlashMode;
 }
 
 interface UIState {
@@ -67,6 +60,11 @@ interface UIState {
 }
 
 const deviceManagerSingleton = createCameraDeviceManager();
+
+// iOS 设备检测（用于在无硬件 torch 支持的 iOS 上隐藏闪光按钮，避免“点了不亮”的误导）
+const isIOS =
+  /iP(hone|ad|od)/.test(navigator.userAgent) ||
+  (navigator.platform === 'MacIntel' && (navigator as any).maxTouchPoints > 1);
 
 export const NewCameraCapture: React.FC<NewCameraCaptureProps> = ({
   onCapture,
@@ -84,36 +82,110 @@ export const NewCameraCapture: React.FC<NewCameraCaptureProps> = ({
   captureLabel = '拍照',
   fallbackLabel = '文件选择',
   allowFileFallback = true,
-  continuous = true
+  continuous = true,
+  initialFlashMode = 'off'
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
-const sessionRef = useRef<StreamSession | null>(null);
-const startSeqRef = useRef(0); // 启动尝试序号，避免竞态
-const phaseRef = useRef('idle');
+  const sessionRef = useRef<StreamSession | null>(null);
+  const startSeqRef = useRef(0); // 启动尝试序号，避免竞态
+  const phaseRef = useRef('idle');
   const mountedRef = useRef(true);
   const [uiState, setUiState] = useState<UIState>({ phase: 'idle' });
-  // 同步 phaseRef
   useEffect(() => { phaseRef.current = uiState.phase; }, [uiState.phase]);
+
   const [needUserGesture, setNeedUserGesture] = useState(false);
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [notSupported, setNotSupported] = useState(false);
   const [starting, setStarting] = useState(false);
   const videoAttachedRef = useRef(false);
 
-  // 新增：拍照状态与冷却控制
+  // 拍照状态与冷却
   const [capturing, setCapturing] = useState(false);
   const [cooldown, setCooldown] = useState(false);
   const [showShotFeedback, setShowShotFeedback] = useState(false);
   const cooldownTimerRef = useRef<number | null>(null);
   const feedbackTimerRef = useRef<number | null>(null);
 
-  // 组件卸载时清理定时器
+  // 能力增强：flash / focus
+  const trackControlsRef = useRef<TrackControls | null>(null);
+  const [support, setSupport] = useState<TrackControlsSupport | null>(null);
+
+  const [flashMode, setFlashMode] = useState<FlashMode>(initialFlashMode);
+  const torchActiveRef = useRef(false); // 记录 torch 当前状态（避免重复 applyConstraints）
+
+  const [focusPoint, setFocusPoint] = useState<{ x: number; y: number } | null>(null);
+  const focusHideTimerRef = useRef<number | null>(null);
+
+  // 组件卸载清理
   useEffect(() => {
     return () => {
       if (cooldownTimerRef.current) window.clearTimeout(cooldownTimerRef.current);
       if (feedbackTimerRef.current) window.clearTimeout(feedbackTimerRef.current);
+      if (focusHideTimerRef.current) window.clearTimeout(focusHideTimerRef.current);
     };
   }, []);
+
+  // 切换闪光模式：循环
+  const cycleFlashMode = () => {
+    setFlashMode(prev => {
+      if (!support || !support.torch) {
+        // 无 torch 支持: 只有 off / burst（burst 如果也无意义可只保留 off，这里仍保留 burst 以便“闪一下”逻辑）
+        if (prev === 'off') return 'burst';
+        if (prev === 'burst') return 'off';
+        return 'off';
+      } else {
+        // 有 torch 支持: off -> burst -> torch -> off
+        if (prev === 'off') return 'burst';
+        if (prev === 'burst') return 'torch';
+        if (prev === 'torch') return 'off';
+        return 'off';
+      }
+    });
+  };
+
+  // 当 flashMode 变为 torch 时立即尝试打开；离开 torch 关闭
+  useEffect(() => {
+    const controls = trackControlsRef.current;
+    if (!controls) return;
+    if (flashMode === 'torch') {
+      if (!controls.hasTorch()) return;
+      controls.setTorch(true).then(ok => {
+        torchActiveRef.current = ok;
+      });
+    } else {
+      // 其他模式关闭持续 torch
+      if (torchActiveRef.current) {
+        controls.setTorch(false).finally(() => {
+          torchActiveRef.current = false;
+        });
+      }
+    }
+  }, [flashMode]);
+
+  // 点击对焦 / 手动焦距
+  const handleFocusTap = (e: React.MouseEvent) => {
+    if (!support) return;
+    if (!support.focus.singleShot && !support.focus.manual) return;
+    const rect = (containerRef.current?.getBoundingClientRect?.()) || null;
+    if (!rect) return;
+
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    setFocusPoint({ x, y });
+    if (focusHideTimerRef.current) window.clearTimeout(focusHideTimerRef.current);
+    focusHideTimerRef.current = window.setTimeout(() => setFocusPoint(null), 900);
+
+    const controls = trackControlsRef.current;
+    if (!controls) return;
+
+    if (support.focus.manual) {
+      // 使用垂直位置映射 0~1
+      const ratio = 1 - Math.min(1, Math.max(0, y / rect.height));
+      controls.setManualFocus(ratio);
+    } else if (support.focus.singleShot) {
+      controls.applySingleShotFocus();
+    }
+  };
 
   // 内部启动逻辑
   const startSession = useCallback(async (userGesture = false) => {
@@ -127,11 +199,13 @@ const phaseRef = useRef('idle');
     setNotSupported(false);
     setUiState({ phase: 'requesting' });
 
-    // 先销毁旧会话，避免并发占用导致新流卡住
+    // 销毁旧会话
     if (sessionRef.current) {
       try { sessionRef.current.destroy(); } catch {}
       sessionRef.current = null;
       videoAttachedRef.current = false;
+      trackControlsRef.current = null;
+      setSupport(null);
       if (containerRef.current) containerRef.current.innerHTML = '';
     }
 
@@ -146,7 +220,6 @@ const phaseRef = useRef('idle');
       debug
     };
 
-    // 看门狗: 若 2 秒内没有进入 stabilizing/ready 且视频未附着，提示需要用户手势
     const watchdog = window.setTimeout(() => {
       if (!mountedRef.current) return;
       if (startSeqRef.current !== seq) return;
@@ -160,7 +233,6 @@ const phaseRef = useRef('idle');
     try {
       const session = await deviceManagerSingleton.createSession(options);
       if (startSeqRef.current !== seq) {
-        // 已有新启动尝试，丢弃本次
         if (debug) console.log('[NewCameraCapture] stale session discarded', seq);
         try { session.destroy(); } catch {}
         return;
@@ -170,6 +242,23 @@ const phaseRef = useRef('idle');
         return;
       }
       sessionRef.current = session;
+      // 读取增强能力
+      const controls = session.getTrackControls();
+      trackControlsRef.current = controls;
+      try {
+        if (controls) {
+          const sup = controls.getSupport();
+            setSupport(sup);
+            // 如果初始模式是 torch 但不支持 torch，则降级为 off
+            if (initialFlashMode === 'torch' && !sup.torch) {
+              setFlashMode('off');
+            }
+        } else {
+          setSupport(null);
+        }
+      } catch {
+        setSupport(null);
+      }
 
       session.onStateChange(s => {
         if (!mountedRef.current) return;
@@ -241,27 +330,24 @@ const phaseRef = useRef('idle');
     watermarkBuilder,
     facingMode,
     debug,
-    onError
+    onError,
+    initialFlashMode
   ]);
 
   const destroySession = useCallback(() => {
-    startSeqRef.current++; // 终止当前启动序列
+    startSeqRef.current++;
     if (sessionRef.current) {
       try { sessionRef.current.destroy(); } catch {}
     }
     sessionRef.current = null;
+    trackControlsRef.current = null;
+    setSupport(null);
+    torchActiveRef.current = false;
     videoAttachedRef.current = false;
     if (containerRef.current) containerRef.current.innerHTML = '';
     setUiState({ phase: 'idle' });
   }, []);
 
-  // 注意：
-  // 原实现依赖项包含 startSession（其又依赖 starting），在 startSession 内部会 setStarting(true/false)。
-  // starting 变化会重新生成新的 startSession 函数引用，导致该 effect 每次状态切换都重跑并重新 setTimeout，
-  // 形成“启动 -> 完成 -> effect 重新触发 -> 再次启动”的循环，最终可能出现 Maximum update depth exceeded。
-  //
-  // 修复：仅在 autoStart 变化时运行首次自动启动，不把 startSession/destroySession 放入依赖。
-  // 后续若需要根据配置变化重启，可单独添加一个配置监控 effect（暂不添加，防止再次产生循环）。
   useEffect(() => {
     mountedRef.current = true;
     if (autoStart) {
@@ -292,10 +378,36 @@ const phaseRef = useRef('idle');
       if (state.phase !== 'ready') return;
 
       setCapturing(true);
-      const result = await session.capture();
+
+      // burst 模式：若支持 torch，拍照前短暂点亮
+      let burstTorchOn = false;
+      if (flashMode === 'burst') {
+        const controls = trackControlsRef.current;
+        if (controls && controls.hasTorch()) {
+          const ok = await controls.setTorch(true);
+          if (ok) {
+            burstTorchOn = true;
+            // 给传感器一点时间，避免刚点亮太暗
+            await new Promise(r => setTimeout(r, 100));
+          }
+        }
+      }
+
+      let result: CaptureResult;
+      try {
+        result = await session.capture();
+      } finally {
+        if (burstTorchOn) {
+          // 关闭临时 torch
+            trackControlsRef.current?.setTorch(false).then(() => {
+              // ignore
+            });
+        }
+      }
+
       onCapture(result.file, result.meta);
 
-      // 成功反馈：按钮显示“已拍摄”并 1.2s 叠加提示，2s 冷却防止重复点击
+      // 成功反馈 & 冷却
       setShowShotFeedback(true);
       setCooldown(true);
       if (feedbackTimerRef.current) window.clearTimeout(feedbackTimerRef.current);
@@ -316,7 +428,7 @@ const phaseRef = useRef('idle');
     } finally {
       setCapturing(false);
     }
-  }, [onCapture, onError, continuous, destroySession, capturing, cooldown]);
+  }, [onCapture, onError, continuous, destroySession, capturing, cooldown, flashMode]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -349,6 +461,47 @@ const phaseRef = useRef('idle');
     return null;
   };
 
+  const renderFlashButton = () => {
+    if (!showVideo) return null;
+    // 无能力信息：不渲染
+    if (!support) return null;
+    // iOS 且无硬件 torch 支持：直接隐藏（避免用户以为能点亮）
+    if (!support.torch && isIOS) return null;
+
+    // 若不支持 torch（安卓个别机型）：仍允许展示“闪一下”(burst) 但只做 UI 提示；本地逻辑会检测 hasTorch() 再决定是否真正点亮
+    const labelMap: Record<FlashMode, string> = {
+      off: '闪光:关',
+      burst: support.torch ? '闪光:闪一下' : '闪光:模拟',
+      torch: '闪光:常亮'
+    };
+    // 如果不支持 torch 且当前模式为 torch（极少发生，已在上游降级），强制显示关
+    const displayMode = support.torch ? flashMode : (flashMode === 'torch' ? 'off' : flashMode);
+    return (
+      <button
+        type="button"
+        onClick={cycleFlashMode}
+        className="px-2 py-1 rounded text-[11px] bg-gray-200 hover:bg-gray-300 text-gray-700 disabled:opacity-60"
+        disabled={!support.torch && flashMode === 'burst'} /* 无 torch 时 burst 只是视觉提示，可以留可点或禁用，按需调整 */
+      >
+        {labelMap[displayMode]}
+      </button>
+    );
+  };
+
+  const renderFocusHint = () => {
+    if (!showVideo || !support) return null;
+    if (!support.focus.singleShot && !support.focus.manual) return null;
+    return (
+      <span className="text-[11px] text-gray-500">
+        {support.focus.manual
+          ? '点击画面调焦'
+          : support.focus.singleShot
+            ? '点击对焦'
+            : null}
+      </span>
+    );
+  };
+
   return (
     <div className={compact ? '' : 'border border-gray-200 rounded-md p-3 bg-white'}>
       {!compact && (
@@ -356,9 +509,27 @@ const phaseRef = useRef('idle');
           现场拍照
         </div>
       )}
-      <div className="relative w-full bg-black rounded-md overflow-hidden" style={{ minHeight: compact ? 160 : 200 }}>
-        {/* 只用于挂载原生 video，不再与 React 管理的占位/调试节点混用，避免手动 innerHTML 清空导致 React 卸载时 removeChild 抛错 */}
+      <div
+        className="relative w-full bg-black rounded-md overflow-hidden select-none"
+        style={{ minHeight: compact ? 160 : 200 }}
+        onClick={handleFocusTap}
+      >
+        {/* video 容器 */}
         <div ref={containerRef} className="w-full h-full"></div>
+
+        {/* 对焦点标记 */}
+        {focusPoint && (
+          <div
+            className="absolute border-2 border-yellow-400 rounded-sm pointer-events-none"
+            style={{
+              width: 40,
+              height: 40,
+              left: focusPoint.x - 20,
+              top: focusPoint.y - 20,
+              boxShadow: '0 0 4px rgba(255,255,0,0.7)'
+            }}
+          />
+        )}
 
         {!showVideo && (
           <div className="absolute inset-0 flex items-center justify-center text-gray-400 text-xs select-none p-2 text-center leading-5">
@@ -379,6 +550,13 @@ const phaseRef = useRef('idle');
             <div>phase:{uiState.phase}</div>
             {uiState.dimension && <div>{uiState.dimension.w}x{uiState.dimension.h}</div>}
             {uiState.stableFrames !== undefined && <div>stable:{uiState.stableFrames}</div>}
+            {support && (
+              <div>
+                {support.torch ? 'torch' : 'noTorch'} | f:
+                {support.focus.manual ? 'manual' : support.focus.singleShot ? 'single' : 'auto'}
+              </div>
+            )}
+            <div>flash:{flashMode}</div>
           </div>
         )}
 
@@ -418,6 +596,8 @@ const phaseRef = useRef('idle');
               : '准备中'}
           </button>
         )}
+        {renderFlashButton()}
+        {renderFocusHint()}
         {!showVideo && needUserGesture && (
           <button
             type="button"
