@@ -1676,3 +1676,37 @@ node secure-deploy.js --non-interactive \
   - 组件 `EquipmentQRBatchPrint` 新增 `mode` 属性：`selected | all`。
   - 安全与性能：限制单次最大抓取页数；未修改后端接口权限逻辑。
   - 不更改现有响应结构，纯前端增强，符合前后端契约规范 (AGENTS.md 第16条)。
+## 2025-09-08
+
+### 新增
+- 全局图片预览能力（ImagePreviewProvider + useImagePreview）：
+  - 放大/缩小、双击放大、拖拽平移、双指捏合（移动端）、左右切换、Esc 关闭、方向键切换。
+  - 底部缩略图导航（可配置开关）。
+  - 下载当前图片按钮（受保护资源通过 `api.getFile` 自动携带 Token）。
+  - 邻近预加载、对象 URL 生命周期释放。
+  - 文件：
+    - frontend/src/components/image-preview/ImagePreviewContext.tsx
+    - frontend/src/main.tsx（注入 Provider）
+    - 文档：docs/IMAGE_PREVIEW.md
+
+### 集成
+- 组件与页面接入统一预览能力：
+  - 网格组件：frontend/src/components/ui/ImageGrid.tsx（点击任意图片打开统一预览）。
+  - 巡检记录详情：frontend/src/pages/InspectionRecordsPage.tsx（详情弹窗内多图支持组内左右切换）。
+  - 我的问题详情：frontend/src/pages/MyIssuesPage.tsx（问题图、修复图可点击放大）。
+  - 二维码弹窗：frontend/src/components/QRCodeModal.tsx（点击二维码放大）。
+  - 批量二维码打印预览：frontend/src/components/EquipmentQRBatchPrint.tsx（预览区域点击放大；打印 HTML 模板不变）。
+
+### 变更
+- AuthenticatedImage 组件新增可选回调 `onOpenPreview`，用于与全局预览对接；不传时保留原内置 Dialog 放大逻辑。
+  - 文件：frontend/src/components/AuthenticatedImage.tsx
+
+### 配置
+- Provider 可配置：
+  - `thumbnails?: boolean` 是否显示缩略图条（默认 true）
+  - `enableDownload?: boolean` 是否显示下载按钮（默认 true）
+  - `swipeThreshold?: number` 移动端左右滑动切换阈值（默认 60）
+
+### 兼容/注意事项
+- 摄像头拍摄流程的临时/本地 `blob:` 预览图（frontend/src/components/MultiCameraCapture.tsx）未接入统一预览（默认统一预览从 `api.getFile` 拉取资源）。如需支持，可扩展为直接展示 `blob:` URL。
+- 打印页中的 HTML 字符串模板 `<img>` 不接入统一预览（非 React DOM）。

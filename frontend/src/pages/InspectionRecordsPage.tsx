@@ -14,6 +14,7 @@ import { Calendar } from '@/components/ui/calendar'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { PageContainer, PageHeader, ContentSection } from '@/components/layout'
+import { useImagePreview } from '@/components/image-preview/ImagePreviewContext'
 import { useAuthStore } from '@/stores/auth'
 import { inspectionApi, userApi, factoryApi } from '@/api'
 import { parseInspectionImages, parseIssueImages } from '@/utils/imageParse'
@@ -47,6 +48,7 @@ interface InspectionDetail extends Omit<InspectionLog, 'checklistResults'> {
 }
 
 export function InspectionRecordsPage() {
+  const { open: openPreview } = useImagePreview()
   const { user } = useAuthStore()
   const [inspections, setInspections] = useState<InspectionLog[]>([])
   const [filters, setFilters] = useState<InspectionFilters>({})
@@ -809,6 +811,7 @@ export function InspectionRecordsPage() {
                                           alt={`隐患照片 ${idx + 1}`}
                                           className={cn('w-full rounded-lg border shadow-sm object-cover', images.length === 1 ? 'max-w-md max-h-72 object-contain' : 'h-40')}
                                           enableZoom={true}
+                                          onOpenPreview={() => openPreview(images, idx)}
                                         />
                                         {images.length > 1 && (
                                           <div className="absolute top-1 left-1 bg-black/50 text-white text-xs px-1 rounded">{idx + 1}</div>

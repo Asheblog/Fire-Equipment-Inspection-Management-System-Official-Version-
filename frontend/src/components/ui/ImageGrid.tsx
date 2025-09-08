@@ -2,6 +2,7 @@ import React from 'react'
 import { Badge } from '@/components/ui/badge'
 import { AuthenticatedImage } from '@/components/AuthenticatedImage'
 import { cn } from '@/lib/utils'
+import { useImagePreview } from '@/components/image-preview/ImagePreviewContext'
 
 interface ImageGridProps {
   label?: string
@@ -37,6 +38,7 @@ export const ImageGrid: React.FC<ImageGridProps> = ({
   layout = 'grid'
 }) => {
   const filtered = images.filter(Boolean)
+  const { open } = useImagePreview()
 
   if (error) {
     return (
@@ -109,6 +111,7 @@ export const ImageGrid: React.FC<ImageGridProps> = ({
               enableZoom={enableZoom}
               priority={idx < eagerCount}
               lazy={idx >= eagerCount}
+              onOpenPreview={() => open(filtered, idx)}
             />
             {numbered && count > 1 && (
               <div className="absolute top-1 left-1 bg-black/50 text-white text-xs px-1 rounded">

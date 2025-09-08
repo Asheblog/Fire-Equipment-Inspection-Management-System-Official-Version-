@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { PageContainer, PageHeader, ContentSection } from '@/components/layout'
+import { useImagePreview } from '@/components/image-preview/ImagePreviewContext'
 import { 
   AlertTriangle,
   CheckCircle,
@@ -140,6 +141,7 @@ const MyIssueCard: React.FC<MyIssueCardProps> = ({ issue, onView }) => {
 
 const MyIssuesPage: React.FC = () => {
   const log = createLogger('MyIssues')
+  const { open: openPreview } = useImagePreview()
   const { user } = useAuthStore()
   const [issues, setIssues] = useState<Issue[]>([])
   const [loading, setLoading] = useState(true)
@@ -509,6 +511,7 @@ const MyIssuesPage: React.FC = () => {
                           alt="隐患图片"
                           className="max-w-md max-h-64 object-contain mx-auto rounded-lg border shadow-sm"
                           enableZoom={true}
+                          onOpenPreview={() => openPreview([selectedIssue!.issueImageUrl!], 0)}
                         />
                         <p className="text-xs text-gray-500 mt-2">点击图片可放大查看</p>
                       </div>
@@ -553,6 +556,7 @@ const MyIssuesPage: React.FC = () => {
                           alt="处理后图片"
                           className="max-w-md max-h-64 object-contain mx-auto rounded-lg border shadow-sm"
                           enableZoom={true}
+                          onOpenPreview={() => openPreview([selectedIssue!.fixedImageUrl!], 0)}
                         />
                         <p className="text-xs text-gray-500 mt-2">点击图片可放大查看</p>
                       </div>

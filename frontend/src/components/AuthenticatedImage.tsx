@@ -16,7 +16,7 @@ interface AuthenticatedImageProps {
   priority?: boolean    // 首屏优先，跳过懒加载
 }
 
-export function AuthenticatedImage({ src, alt = '', className = '', fallback, enableZoom = false, lazy = true, rootMargin = '100px', threshold = 0.1, priority = false }: AuthenticatedImageProps) {
+export function AuthenticatedImage({ src, alt = '', className = '', fallback, enableZoom = false, lazy = true, rootMargin = '100px', threshold = 0.1, priority = false, onOpenPreview }: AuthenticatedImageProps & { onOpenPreview?: () => void }) {
   const log = createLogger('AuthImage')
   const [imageSrc, setImageSrc] = useState<string>('')
   const [loading, setLoading] = useState(true)
@@ -193,7 +193,12 @@ export function AuthenticatedImage({ src, alt = '', className = '', fallback, en
           alt={alt} 
           loading={priority ? 'eager' : 'lazy'}
           className={`${className} ${enableZoom ? 'cursor-zoom-in' : ''}`}
-          onClick={() => enableZoom && setShowModal(true)}
+          onClick={() => {
+            if (!enableZoom) return
+            // @ts-ignore onOpenPreview may be injected later to integrate global viewer
+            if (typeof onOpenPreview === 'function') { onOpenPreview() }
+            else setShowModal(true)
+          }}
           onError={() => {
             setError(true)
             if (imageSrc) {

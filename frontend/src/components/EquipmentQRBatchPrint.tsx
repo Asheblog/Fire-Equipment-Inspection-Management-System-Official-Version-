@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react'
+import { useImagePreview } from '@/components/image-preview/ImagePreviewContext'
 import type { Equipment, Factory } from '@/types'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -33,6 +34,7 @@ interface FieldOptions {
 
 export const EquipmentQRBatchPrint: React.FC<EquipmentQRBatchPrintProps> = ({ open, onClose, equipments, mode = 'selected' }) => {
   const printContainerRef = useRef<HTMLDivElement>(null)
+  const { open: openPreview } = useImagePreview()
 
   // 标签尺寸配置
   const [labelSize, setLabelSize] = useState<LabelPreset>(PRESETS[1]) // 默认 50×50
@@ -295,7 +297,7 @@ export const EquipmentQRBatchPrint: React.FC<EquipmentQRBatchPrintProps> = ({ op
                           <div className="text-[10px] font-semibold leading-tight line-clamp-2 mb-[2px]" title={item.name}>{item.name}</div>
                           <div className="flex-1 flex items-center justify-center overflow-hidden min-h-0">
                             {item.qrImageUrl ? (
-                              <img src={item.qrImageUrl} alt={item.name} className="object-contain max-w-full max-h-full" />
+                              <img src={item.qrImageUrl} alt={item.name} className="object-contain max-w-full max-h-full cursor-zoom-in" onClick={() => openPreview([item.qrImageUrl], 0)} />
                             ) : (
                               <span className="text-[9px] text-gray-400">无二维码</span>
                             )}

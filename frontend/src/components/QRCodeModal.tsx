@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { QrCode, Download, ExternalLink } from 'lucide-react'
+import { useImagePreview } from '@/components/image-preview/ImagePreviewContext'
 import type { Equipment } from '@/types'
 import { formatQrCodeDisplay } from '@/utils/qrCode'
 
@@ -24,6 +25,7 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({
   equipment
 }) => {
   const log = createLogger('QRCodeModal')
+  const { open: openPreview } = useImagePreview()
   const [qrImageUrl, setQrImageUrl] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>('')
@@ -135,7 +137,8 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({
                   <img 
                     src={qrImageUrl} 
                     alt="设备二维码"
-                    className="w-64 h-64 object-contain"
+                    className="w-64 h-64 object-contain cursor-zoom-in"
+                    onClick={() => openPreview([qrImageUrl], 0)}
                   />
                 </div>
                 
