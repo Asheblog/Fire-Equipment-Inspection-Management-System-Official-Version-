@@ -155,23 +155,48 @@ const MyIssuesPage: React.FC = () => {
     totalPages: 0
   })
 
+  // 独立的状态统计（避免切换标签被覆盖）
+  const [statusCounts, setStatusCounts] = useState({
+    total: 0,
+    pending: 0,
+    inProgress: 0,
+    audit: 0,
+    closed: 0,
+    rejected: 0
+  })
+
+  const uiTabToStatus: Record<string,string> = {
+    'pending': 'PENDING',
+    'in-progress': 'IN_PROGRESS',
+    'audit': 'PENDING_AUDIT',
+    'closed': 'CLOSED',
+    'rejected': 'REJECTED'
+  }
+
   useEffect(() => {
-    loadMyIssues('all', 1)
-  }, [])
+    if (user) {
+      loadMyIssues('all', 1)
+      fetchStatusCounts()
+    }
+  }, [user])
 
   // 加载我的隐患列表
   const loadMyIssues = async (status: string = 'all', page: number = 1) => {
     setLoading(true)
     try {
-      const params = {
+      const params: any = {
         page,
         pageSize: pagination.pageSize,
-        reporterId: user?.id, // 只获取当前用户上报的隐患
         ...(status !== 'all' && { status }),
         ...(searchQuery && { search: searchQuery })
       }
 
-      log.debug('我的隐患列表 发起请求', params)
+      // 仅在点检员角色时限制为“我的”
+      if (user?.role === 'INSPECTOR') {
+        params.reporterId = user.id
+      }
+
+      log.debug('我的隐患列表 发起请求', { params, role: user?.role })
       const response = await issueApi.getList(params)
       log.debug('我的隐患列表 响应', { ok: response.success, count: response.data?.items?.length })
 
@@ -193,23 +218,37 @@ const MyIssuesPage: React.FC = () => {
     }
   }
 
+  // 获取各状态统计（与当前分页独立，防止切换标签数字丢失）
+  const fetchStatusCounts = async () => {
+    try {
+      const res = await issueApi.getStats({ period: 'month' })
+      if (res?.data?.byStatus) {
+        setStatusCounts({
+          total: res.data.total || 0,
+          pending: res.data.byStatus.pending || 0,
+            // inProgress 对应后端 byStatus.inProgress
+          inProgress: res.data.byStatus.inProgress || 0,
+          audit: res.data.byStatus.pendingAudit || 0,
+          closed: res.data.byStatus.closed || 0,
+          rejected: res.data.byStatus.rejected || 0
+        })
+      }
+    } catch (e) {
+      log.error('获取隐患状态统计失败', e)
+    }
+  }
+
   // 标签页切换
   const handleTabChange = (value: string) => {
     setActiveTab(value)
-    const statusMap: { [key: string]: string } = {
-      'pending': 'PENDING',
-      'in-progress': 'IN_PROGRESS', 
-      'audit': 'PENDING_AUDIT',
-      'closed': 'CLOSED',
-      'rejected': 'REJECTED',
-      'all': 'all'
-    }
-    loadMyIssues(statusMap[value], 1)
+    const mapped = value === 'all' ? 'all' : (uiTabToStatus[value] || 'all')
+    loadMyIssues(mapped, 1)
   }
 
   // 搜索处理
   const handleSearch = () => {
-    loadMyIssues(activeTab === 'all' ? 'all' : activeTab, 1)
+    const mapped = activeTab === 'all' ? 'all' : (uiTabToStatus[activeTab] || 'all')
+    loadMyIssues(mapped, 1)
   }
 
   // 查看隐患详情
@@ -220,15 +259,13 @@ const MyIssuesPage: React.FC = () => {
 
   // 分页处理
   const handlePageChange = (newPage: number) => {
-    loadMyIssues(activeTab === 'all' ? 'all' : activeTab, newPage)
+    const mapped = activeTab === 'all' ? 'all' : (uiTabToStatus[activeTab] || 'all')
+    loadMyIssues(mapped, newPage)
   }
 
-  // 统计数据
-  const pendingCount = issues.filter(i => i.status === 'PENDING').length
-  const inProgressCount = issues.filter(i => i.status === 'IN_PROGRESS').length
-  const auditCount = issues.filter(i => i.status === 'PENDING_AUDIT').length
-  const closedCount = issues.filter(i => i.status === 'CLOSED').length
-  const rejectedCount = issues.filter(i => i.status === 'REJECTED').length
+  // 统计数字改为使用独立的 statusCounts，避免 issues 被过滤覆盖造成标签错乱
+  // 保留原逻辑注释:
+  // const pendingCount = ...
 
   return (
     <PageContainer>
@@ -242,31 +279,31 @@ const MyIssuesPage: React.FC = () => {
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
           <Card className="text-center">
             <CardContent className="p-4">
-              <div className="text-2xl font-bold text-blue-600">{pagination.total}</div>
+              <div className="text-2xl font-bold text-blue-600">{statusCounts.total}</div>
               <div className="text-sm text-gray-600">总计</div>
             </CardContent>
           </Card>
           <Card className="text-center">
             <CardContent className="p-4">
-              <div className="text-2xl font-bold text-orange-600">{pendingCount}</div>
+              <div className="text-2xl font-bold text-orange-600">{statusCounts.pending}</div>
               <div className="text-sm text-gray-600">待处理</div>
             </CardContent>
           </Card>
           <Card className="text-center">
             <CardContent className="p-4">
-              <div className="text-2xl font-bold text-blue-600">{inProgressCount}</div>
+              <div className="text-2xl font-bold text-blue-600">{statusCounts.inProgress}</div>
               <div className="text-sm text-gray-600">处理中</div>
             </CardContent>
           </Card>
           <Card className="text-center">
             <CardContent className="p-4">
-              <div className="text-2xl font-bold text-purple-600">{auditCount}</div>
+              <div className="text-2xl font-bold text-purple-600">{statusCounts.audit}</div>
               <div className="text-sm text-gray-600">待审核</div>
             </CardContent>
           </Card>
           <Card className="text-center">
             <CardContent className="p-4">
-              <div className="text-2xl font-bold text-green-600">{closedCount}</div>
+              <div className="text-2xl font-bold text-green-600">{statusCounts.closed}</div>
               <div className="text-sm text-gray-600">已关闭</div>
             </CardContent>
           </Card>
@@ -292,13 +329,13 @@ const MyIssuesPage: React.FC = () => {
 
         {/* 隐患列表 */}
         <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-          <TabsList className="grid grid-cols-6 w-full">
-            <TabsTrigger value="all">全部 ({pagination.total})</TabsTrigger>
-            <TabsTrigger value="pending">待处理 ({pendingCount})</TabsTrigger>
-            <TabsTrigger value="in-progress">处理中 ({inProgressCount})</TabsTrigger>
-            <TabsTrigger value="audit">待审核 ({auditCount})</TabsTrigger>
-            <TabsTrigger value="closed">已关闭 ({closedCount})</TabsTrigger>
-            <TabsTrigger value="rejected">已拒绝 ({rejectedCount})</TabsTrigger>
+          <TabsList className="w-full overflow-x-auto flex-nowrap px-1 space-x-2">
+            <TabsTrigger value="all">全部 ({statusCounts.total})</TabsTrigger>
+            <TabsTrigger value="pending">待处理 ({statusCounts.pending})</TabsTrigger>
+            <TabsTrigger value="in-progress">处理中 ({statusCounts.inProgress})</TabsTrigger>
+            <TabsTrigger value="audit">待审核 ({statusCounts.audit})</TabsTrigger>
+            <TabsTrigger value="closed">已关闭 ({statusCounts.closed})</TabsTrigger>
+            <TabsTrigger value="rejected">已拒绝 ({statusCounts.rejected})</TabsTrigger>
           </TabsList>
 
           <TabsContent value={activeTab} className="mt-6">
