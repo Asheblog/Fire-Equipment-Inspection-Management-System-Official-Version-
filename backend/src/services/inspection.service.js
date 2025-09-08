@@ -792,6 +792,375 @@ class InspectionService {
       throw error;
     }
   }
+
+  /**
+   * 私有方法：加载点检记录（含器材与工厂）用于更新
+   */
+  async _loadInspectionForUpdate(prisma, id) {
+    return prisma.inspectionLog.findUnique({
+      where: { id },
+      include: {
+        equipment: {
+          select: {
+            id: true,
+            factoryId: true,
+            status: true
+          }
+        }
+      }
+    });
+  }
+
+  /**
+   * 私有方法：权限校验
+   * INSPECTOR 只能操作自己的记录；FACTORY_ADMIN 需同厂区；SUPER_ADMIN 放行
+   */
+  _checkPermission(inspection, user) {
+    if (!inspection) {
+      throw new Error('点检记录不存在');
+    }
+    const role = user.role;
+    if (role === 'SUPER_ADMIN') return;
+    const factoryId = inspection.equipment.factoryId;
+    if (role === 'FACTORY_ADMIN') {
+      if (factoryId !== user.factoryId) throw new Error('PERMISSION_DENIED');
+      return;
+    }
+    if (role === 'INSPECTOR') {
+      if (inspection.inspectorId !== user.id || factoryId !== user.factoryId) {
+        throw new Error('PERMISSION_DENIED');
+      }
+      return;
+    }
+    // 其它角色（若存在）默认按厂区隔离
+    if (factoryId !== user.factoryId) throw new Error('PERMISSION_DENIED');
+  }
+
+  /**
+   * 私有方法：更新图片数组（统一序列化+首图同步）
+   */
+  _updateImageArray(images, newField, oldField) {
+    return ImageHelper.prepareForSave(images, newField, oldField);
+  }
+
+  /**
+   * 私有方法：判断文件是否仍被引用
+   * 由于多图字段存储为JSON字符串(String)，使用 contains('"url"') 精确匹配 token
+   */
+  async _isFileReferenced(prisma, url) {
+    const token = `"${url}"`;
+    const [
+      issueCount,
+      issueMultiCount,
+      issueFixedSingleCount,
+      issueFixedMultiCount,
+      inspSingleCount,
+      inspMultiCount
+    ] = await Promise.all([
+      prisma.issue.count({ where: { issueImageUrl: url } }),
+      prisma.issue.count({ where: { issueImageUrls: { contains: token } } }),
+      prisma.issue.count({ where: { fixedImageUrl: url } }),
+      prisma.issue.count({ where: { fixedImageUrls: { contains: token } } }),
+      prisma.inspectionLog.count({ where: { inspectionImageUrl: url } }),
+      prisma.inspectionLog.count({ where: { inspectionImageUrls: { contains: token } } })
+    ]);
+    return (issueCount + issueMultiCount + issueFixedSingleCount + issueFixedMultiCount + inspSingleCount + inspMultiCount) > 0;
+  }
+
+  /**
+   * 私有方法：安全删除本地未再引用的上传文件
+   */
+  async _safeUnlink(url) {
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      if (!url || typeof url !== 'string') return;
+      // 仅允许形如 /uploads/xxx 或 /uploads/sub/xxx
+      if (!url.startsWith('/uploads/')) return;
+      const relative = url.replace(/^\/uploads\//, '');
+      const filePath = path.join(__dirname, '../../uploads', relative);
+      if (filePath.indexOf(path.join(__dirname, '../../uploads')) !== 0) return; // 目录逃逸保护
+      if (fs.existsSync(filePath)) {
+        await fs.promises.unlink(filePath);
+      }
+    } catch (e) {
+      console.warn('[SAFE_UNLINK] 删除文件失败(忽略)：', e.message);
+    }
+  }
+
+  /**
+   * 创建空点检记录（增量模式起点）
+   * checklistResults 使用 { "__pending": true } 占位，finalize 时校验
+   */
+  async createEmptyInspection(equipmentId, inspectorId) {
+    try {
+      const equipment = await this.prisma.equipment.findUnique({
+        where: { id: equipmentId },
+        select: { id: true, factoryId: true, status: true }
+      });
+      if (!equipment) throw new Error('器材不存在');
+
+      const inspection = await this.prisma.inspectionLog.create({
+        data: {
+          equipmentId,
+            inspectorId,
+          overallResult: 'NORMAL',
+          inspectionImageUrls: null,
+          inspectionImageUrl: null,
+          checklistResults: JSON.stringify({ __pending: true }),
+          issueId: null
+        },
+        include: {
+          equipment: { select: { id: true, factoryId: true } },
+          inspector: { select: { id: true, fullName: true } }
+        }
+      });
+
+      // 归一化返回
+      return {
+        ...inspection,
+        inspectionImages: [],
+        inspectionImageUrl: null
+      };
+    } catch (error) {
+      console.error('创建空点检记录失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 追加一张点检图片
+   */
+  async appendInspectionImage(id, type, imageUrl, user) {
+    if (type !== 'inspection') {
+      // 预留扩展
+      throw new Error('暂不支持的图片类型');
+    }
+    try {
+      const updated = await this.prisma.$transaction(async (prisma) => {
+        const inspection = await this._loadInspectionForUpdate(prisma, id);
+        this._checkPermission(inspection, user);
+
+        // pending 检查：允许在 finalize 前追加
+        const existingImages = ImageHelper.extractImages(inspection, 'inspectionImageUrls', 'inspectionImageUrl');
+        if (existingImages.includes(imageUrl)) {
+          throw new Error('IMAGE_ALREADY_EXISTS');
+        }
+
+        const newImages = [...existingImages, imageUrl];
+        const imageData = this._updateImageArray(newImages, 'inspectionImageUrls', 'inspectionImageUrl');
+
+        const saved = await prisma.inspectionLog.update({
+          where: { id },
+          data: {
+            ...imageData
+          },
+          include: {
+            equipment: { select: { id: true, factoryId: true } },
+            inspector: { select: { id: true, fullName: true } }
+          }
+        });
+
+        const inspectionImages = ImageHelper.extractImages(saved, 'inspectionImageUrls', 'inspectionImageUrl');
+
+        return {
+          ...saved,
+          inspectionImages,
+          inspectionImageUrl: saved.inspectionImageUrl || inspectionImages[0] || null
+        };
+      });
+
+      return updated;
+    } catch (error) {
+      console.error('追加点检图片失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 删除一张点检图片
+   */
+  async removeInspectionImage(id, type, imageUrl, user) {
+    if (type !== 'inspection') {
+      throw new Error('暂不支持的图片类型');
+    }
+    try {
+      const updated = await this.prisma.$transaction(async (prisma) => {
+        const inspection = await this._loadInspectionForUpdate(prisma, id);
+        this._checkPermission(inspection, user);
+
+        const existingImages = ImageHelper.extractImages(inspection, 'inspectionImageUrls', 'inspectionImageUrl');
+        if (!existingImages.includes(imageUrl)) {
+          throw new Error('IMAGE_NOT_FOUND');
+        }
+        const newImages = existingImages.filter(u => u !== imageUrl);
+        const imageData = this._updateImageArray(newImages, 'inspectionImageUrls', 'inspectionImageUrl');
+
+        const saved = await prisma.inspectionLog.update({
+          where: { id },
+          data: {
+            ...imageData
+          },
+          include: {
+            equipment: { select: { id: true, factoryId: true } },
+            inspector: { select: { id: true, fullName: true } }
+          }
+        });
+
+        // 删除物理文件（事务外逻辑需放在事务回调后，但我们先记录是否可删）
+        const shouldDelete = !(await this._isFileReferenced(prisma, imageUrl));
+
+        const inspectionImages = ImageHelper.extractImages(saved, 'inspectionImageUrls', 'inspectionImageUrl');
+
+        return {
+          saved,
+          shouldDelete,
+          response: {
+            ...saved,
+            inspectionImages,
+            inspectionImageUrl: saved.inspectionImageUrl || inspectionImages[0] || null
+          }
+        };
+      });
+
+      if (updated.shouldDelete) {
+        this._safeUnlink(imageUrl);
+      }
+
+      return updated.response;
+    } catch (error) {
+      console.error('删除点检图片失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 最终提交点检记录
+   * body: { overallResult, checklistResults, issueDescription, issueImageUrl?, issueImageUrls? }
+   */
+  async finalizeInspection(id, data, user) {
+    try {
+      const result = await this.prisma.$transaction(async (prisma) => {
+        const inspection = await this._loadInspectionForUpdate(prisma, id);
+        this._checkPermission(inspection, user);
+
+        // 状态校验（防重复提交）
+        let pendingFlag = false;
+        try {
+          const parsed = JSON.parse(inspection.checklistResults || '{}');
+          if (parsed && typeof parsed === 'object' && parsed.__pending) {
+            pendingFlag = true;
+          }
+        } catch {
+          // ignore
+        }
+        if (!pendingFlag) {
+          throw new Error('INVALID_STATE');
+        }
+
+        const {
+          overallResult,
+          checklistResults,
+          issueDescription,
+          issueImageUrl,
+          issueImageUrls
+        } = data || {};
+
+        if (!overallResult || !['NORMAL', 'ABNORMAL'].includes(overallResult)) {
+          throw new Error('overallResult 参数无效');
+        }
+        if (!Array.isArray(checklistResults) || checklistResults.length === 0) {
+          throw new Error('checklistResults 不能为空数组');
+        }
+
+        let issueId = null;
+
+        if (overallResult === 'ABNORMAL') {
+          const finalIssueImages = issueImageUrls || issueImageUrl;
+          const issueImageData = ImageHelper.prepareForSave(
+            finalIssueImages,
+            'issueImageUrls',
+            'issueImageUrl'
+          );
+          const issue = await prisma.issue.create({
+            data: {
+              equipmentId: inspection.equipmentId,
+              description: issueDescription || '点检发现异常',
+              reporterId: inspection.inspectorId,
+              status: 'PENDING',
+              ...issueImageData
+            }
+          });
+          issueId = issue.id;
+
+          // 更新设备状态为异常
+          await prisma.equipment.update({
+            where: { id: inspection.equipmentId },
+            data: { status: 'ABNORMAL' }
+          });
+        } else {
+          // 正常：若设备之前异常则检查是否可以恢复
+            if (inspection.equipment.status === 'ABNORMAL') {
+            const activeCount = await prisma.issue.count({
+              where: {
+                equipmentId: inspection.equipmentId,
+                status: { in: ['PENDING', 'IN_PROGRESS', 'PENDING_AUDIT'] }
+              }
+            });
+            if (activeCount === 0) {
+              await prisma.equipment.update({
+                where: { id: inspection.equipmentId },
+                data: { status: 'NORMAL' }
+              });
+            }
+          }
+        }
+
+        const updatedInspection = await prisma.inspectionLog.update({
+          where: { id },
+          data: {
+            overallResult,
+            checklistResults: JSON.stringify(checklistResults),
+            issueId
+          },
+          include: {
+            equipment: {
+              select: {
+                id: true,
+                factoryId: true,
+                status: true
+              }
+            },
+            inspector: {
+              select: { id: true, fullName: true }
+            },
+            issue: {
+              select: { id: true, description: true, status: true }
+            }
+          }
+        });
+
+        // 更新设备最后点检时间
+        await prisma.equipment.update({
+          where: { id: inspection.equipmentId },
+          data: { lastInspectedAt: new Date() }
+        });
+
+        const inspectionImages = ImageHelper.extractImages(updatedInspection, 'inspectionImageUrls', 'inspectionImageUrl');
+
+        return {
+          ...updatedInspection,
+          inspectionImages,
+          inspectionImageUrl: updatedInspection.inspectionImageUrl || inspectionImages[0] || null
+        };
+      });
+
+      return result;
+    } catch (error) {
+      console.error('最终提交点检记录失败:', error);
+      throw error;
+    }
+  }
 }
 
 module.exports = InspectionService;

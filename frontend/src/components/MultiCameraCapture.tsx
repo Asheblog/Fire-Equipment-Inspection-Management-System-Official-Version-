@@ -8,6 +8,7 @@ interface Item {
   preview?: string;   // 可展示的本地objectURL (含授权获取)
   tempLocal?: string; // 上传中本地预览(未授权fetch)
   uploading: boolean;
+  removing?: boolean; // 远程删除中
   error?: string;
 }
 
@@ -19,6 +20,8 @@ export interface MultiCameraCaptureProps {
   initial?: string[];
   description?: string;
   required?: boolean;
+  remote?: boolean; // 增量远程模式：删除需调用后端
+  onRemoveRemote?: (url: string) => Promise<void> | void;
 }
 
 export const MultiCameraCapture: React.FC<MultiCameraCaptureProps> = ({
@@ -28,10 +31,21 @@ export const MultiCameraCapture: React.FC<MultiCameraCaptureProps> = ({
   upload,
   initial = [],
   description,
-  required
+  required,
+  remote = false,
+  onRemoveRemote
 }) => {
   const [items, setItems] = useState<Item[]>(() => initial.map(u => ({ id: nanoid(), url: u, uploading: false })));
   const [showModal, setShowModal] = useState(false);
+
+  // 受控同步：当父层传入的 initial 与当前不一致时重建（忽略上传中/删除中差异）
+  React.useEffect(() => {
+    const currentUrls = items.filter(i => i.url && !i.error).map(i => i.url);
+    if (initial && (initial.length !== currentUrls.length || initial.some((u, idx) => u !== currentUrls[idx]))) {
+      setItems(initial.map(u => ({ id: nanoid(), url: u, uploading: false })));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initial]);
 
   const updateParent = (list: Item[]) => {
     onChange(list.filter(i => i.url && !i.error).map(i => i.url));
@@ -66,13 +80,28 @@ export const MultiCameraCapture: React.FC<MultiCameraCaptureProps> = ({
     }
   }, [items, max, upload]);
 
-  const remove = (id: string) => {
+  const removeLocal = (id: string) => {
     const target = items.find(i => i.id === id);
     if (target?.preview) URL.revokeObjectURL(target.preview);
     if (target?.tempLocal) URL.revokeObjectURL(target.tempLocal);
     const next = items.filter(i => i.id !== id);
     setItems(next);
     updateParent(next);
+  };
+
+  const handleRemove = async (it: Item) => {
+    if (remote && onRemoveRemote && it.url) {
+      setItems(prev => prev.map(p => p.id === it.id ? { ...p, removing: true } : p));
+      try {
+        await onRemoveRemote(it.url);
+        removeLocal(it.id);
+      } catch (e) {
+        console.error('远程删除失败', e);
+        setItems(prev => prev.map(p => p.id === it.id ? { ...p, removing: false } : p));
+      }
+    } else {
+      removeLocal(it.id);
+    }
   };
 
   // 初始化时为已有远程URL生成授权预览（避免<img> 401）
@@ -114,17 +143,26 @@ export const MultiCameraCapture: React.FC<MultiCameraCaptureProps> = ({
             {!it.preview && it.tempLocal && !it.error && (
               <img src={it.tempLocal} className="object-cover w-full h-full opacity-70" />
             )}
-            {it.uploading && (
-              <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-white text-xs">上传中...</div>
+            {(it.uploading || it.removing) && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-white text-xs">
+                {it.uploading ? '上传中...' : '删除中...'}
+              </div>
             )}
             {it.error && (
               <div className="absolute inset-0 flex flex-col items-center justify-center bg-red-600/70 text-white text-xs p-1 text-center">
                 <span>{it.error}</span>
-                <button onClick={() => remove(it.id)} className="mt-1 underline">移除</button>
+                <button onClick={() => removeLocal(it.id)} className="mt-1 underline">移除</button>
               </div>
             )}
-            {!it.uploading && !it.error && (
-              <button onClick={() => remove(it.id)} className="absolute top-1 right-1 bg-black/50 text-white rounded px-1 text-[10px] opacity-0 group-hover:opacity-100 transition">删</button>
+            {!it.uploading && !it.error && !it.removing && (
+              <button
+                onClick={() => handleRemove(it)}
+                aria-label="删除图片"
+                title="删除图片"
+                className="absolute top-0 right-0 w-7 h-7 flex items-center justify-center bg-red-600/80 hover:bg-red-600 active:bg-red-700 text-white text-sm font-bold rounded-bl-md shadow-md focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-red-400 transition"
+              >
+                ×
+              </button>
             )}
           </div>
         ))}

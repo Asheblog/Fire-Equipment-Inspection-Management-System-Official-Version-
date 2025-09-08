@@ -236,7 +236,59 @@ export const inspectionApi = {
     
   // 获取点检趋势
   getTrend: (params?: { period?: string }): Promise<ApiResponse> =>
-    api.get('/inspections/trend', { params })
+    api.get('/inspections/trend', { params }),
+
+  // ===== 增量点检模式新增接口 =====
+  /**
+   * 创建空的点检记录占位（增量模式起点）
+   * @param data { equipmentId }
+   */
+  createEmpty: (data: { equipmentId: number }): Promise<ApiResponse<InspectionLog>> =>
+    api.post('/inspections/empty', data),
+
+  /**
+   * 追加图片（支持 type: inspection | issue | fixed）
+   * 后端将根据 type 写入对应临时图片数组字段（兼容旧字段首图）
+   */
+  appendImage: (
+    id: number,
+    data: { type: 'inspection' | 'issue' | 'fixed'; imageUrl: string }
+  ): Promise<ApiResponse<InspectionLog>> =>
+    api.post(`/inspections/${id}/images`, data),
+
+  /**
+   * 删除已追加的单张图片
+   * 若图片不存在返回 IMAGE_NOT_FOUND
+   * 若仍被其他记录引用则仅解除引用不物理删除
+   */
+  removeImage: (
+    id: number,
+    data: { type: 'inspection' | 'issue' | 'fixed'; imageUrl: string }
+  ): Promise<ApiResponse<InspectionLog>> =>
+    api.delete(`/inspections/${id}/images`, { data }),
+
+  /**
+   * 最终提交点检结果（完成增量模式）
+   * checklistResults: 前端传数组，后端会序列化为 JSON 字符串
+   * issueDescription: overallResult=ABNORMAL 时可选
+   */
+  finalize: (
+    id: number,
+    data: {
+      overallResult: 'NORMAL' | 'ABNORMAL'
+      checklistResults: Array<{
+        itemName: string
+        result: 'NORMAL' | 'ABNORMAL'
+        note: string
+      }>
+      issueDescription?: string
+      // 以下可选：如果前端在最终提交时为了幂等补发完整图片列表（后端也能从已有临时字段读取）
+      inspectionImages?: string[]
+      issueImages?: string[]
+      fixedImages?: string[]
+    }
+  ): Promise<ApiResponse<InspectionLog>> =>
+    api.patch(`/inspections/${id}/finalize`, data)
 }
 
 // 隐患相关API

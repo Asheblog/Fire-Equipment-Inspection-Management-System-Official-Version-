@@ -83,6 +83,18 @@ router.post('/batch',
 );
 
 // 获取点检记录详情
+ // 创建空点检记录（最小占位, 仅包含 equipmentId，可后续追加图片再补全其他字段）
+router.post('/empty', inspectionController.createEmptyInspection);
+
+// 追加图片（点检图片或异常图片，通过 type 区分：inspection|issue）
+router.post('/:id/images', inspectionController.appendInspectionImage);
+
+// 删除图片（点检/异常图片，通过 type 区分，query/body 提供 url）
+router.delete('/:id/images', inspectionController.removeInspectionImage);
+
+// 最终提交点检记录（补全 checklistResults / overallResult / issueDescription 等）
+router.patch('/:id/finalize', inspectionController.finalizeInspection);
+
 router.get('/:id', inspectionController.getInspectionById);
 
 module.exports = router;
