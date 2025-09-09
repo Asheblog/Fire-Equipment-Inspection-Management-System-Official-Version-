@@ -70,26 +70,6 @@
 ## 系统实际图片（仅供示例，与最新版可能会有出入）
 <img width="1920" height="879" alt="image" src="https://github.com/user-attachments/assets/b8cb0603-272b-451d-985d-8ce778149c60" />
 <img width="1920" height="879" alt="image" src="https://github.com/user-attachments/assets/52533d3c-89ce-4460-be69-26d445f300e4" />
-<img width="1920" height="879" alt="image" src="https://github.com/user-attachments/assets/a8404932-a668-47c9-9e4d-e11975a0c69d" />
-<img width="1920" height="879" alt="image" src="https://github.com/user-attachments/assets/8d4dba8e-cd9d-4ef4-8ebf-406ce614526a" />
-<img width="1920" height="879" alt="image" src="https://github.com/user-attachments/assets/a3753420-08ca-4e36-9b06-e0d221c99b09" />
-<img width="1920" height="879" alt="image" src="https://github.com/user-attachments/assets/de6a880d-c992-48fa-87b8-3a70fde192d2" />
-<img width="1920" height="879" alt="image" src="https://github.com/user-attachments/assets/109f64cc-a524-4365-9ee1-ab89819dd6db" />
-<img width="1920" height="879" alt="image" src="https://github.com/user-attachments/assets/cc86cfd8-7f6d-4ca7-9ec6-a7063ff7333e" />
-<img width="1920" height="879" alt="image" src="https://github.com/user-attachments/assets/52196274-f865-4b08-be37-3665b7efcd07" />
-<img width="1920" height="879" alt="image" src="https://github.com/user-attachments/assets/6fc1d3c0-bc1f-4097-9a99-aae5c88b5732" />
-<img width="1920" height="879" alt="image" src="https://github.com/user-attachments/assets/a3f99964-986f-4d63-8016-91653a41e8e4" />
-<img width="1920" height="879" alt="image" src="https://github.com/user-attachments/assets/94eb4717-51ae-4ff2-9a0e-2cba05bf3fc7" />
-<img width="1920" height="879" alt="image" src="https://github.com/user-attachments/assets/005b484b-0268-43ca-9608-ef148587b865" />
-<img width="1920" height="879" alt="image" src="https://github.com/user-attachments/assets/5e875374-c8f7-41ef-921e-c83c6ec03791" />
-<img width="1920" height="879" alt="image" src="https://github.com/user-attachments/assets/29d3c0a2-da26-4030-913c-d3d3b7fb84f5" />
-<img width="1920" height="879" alt="image" src="https://github.com/user-attachments/assets/06216fd9-4206-4ccf-948e-17bd0fa528e5" />
-<img width="1920" height="879" alt="image" src="https://github.com/user-attachments/assets/2c7494ab-88de-42e8-b7e0-2b4cd94f08db" />
-<img width="1920" height="879" alt="image" src="https://github.com/user-attachments/assets/5fbd3c43-0a1e-4630-a4c1-9893f008b7aa" />
-<img width="1920" height="879" alt="image" src="https://github.com/user-attachments/assets/e25d9388-f262-4e32-b7f7-bd4dbcf43398" />
-<img width="1920" height="879" alt="image" src="https://github.com/user-attachments/assets/2bbef1a4-f9a0-4a1e-bdc1-0ac2fb7eb7e8" />
-<img width="1920" height="879" alt="image" src="https://github.com/user-attachments/assets/bd17b98f-3f6b-489e-bb8d-b109939f6651" />
-<img width="1920" height="879" alt="image" src="https://github.com/user-attachments/assets/9d933b8a-dc68-4a83-b404-8169084bdcc5" />
 
 ### 部署架构 (DevOps完整方案)
 - **🔄 集成部署模式** - 后端托管前端静态文件，单端口统一访问
