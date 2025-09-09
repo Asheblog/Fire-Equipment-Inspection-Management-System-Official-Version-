@@ -1,4 +1,5 @@
 # 更新日志
+> 注：历史记录中提及的 deploy-simple.js / secure-deploy.js 已统一为 deploy.js（现行脚本名）。
 
 ## 2025-09-08（隐患管理增强）
 
