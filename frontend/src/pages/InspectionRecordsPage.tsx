@@ -25,6 +25,7 @@ import { cn } from '@/lib/utils'
 import { formatQrCodeDisplay } from '@/utils/qrCode'
 import type { ColumnDef } from '@tanstack/react-table'
 import type { DateRange } from 'react-day-picker'
+import { useCancelableDialog } from '@/hooks/useCancelableDialog'
 
 const log = createLogger('InspectRecords')
 
@@ -64,10 +65,26 @@ export function InspectionRecordsPage() {
   const [factories, setFactories] = useState<Factory[]>([])
   
   // 详情对话框
-  const [selectedInspection, setSelectedInspection] = useState<InspectionDetail | null>(null)
-  const [detailDialogOpen, setDetailDialogOpen] = useState(false)
-  const [detailLoading, setDetailLoading] = useState(false)
-  const detailAbortRef = useRef<AbortController | null>(null)
+  const {
+    open: detailDialogOpen,
+    loading: detailLoading,
+    data: selectedInspection,
+    openWith: openDetail,
+    onOpenChange: onDetailOpenChange
+  } = useCancelableDialog<InspectionDetail, number>(async (inspectionId, signal) => {
+    const response = await inspectionApi.getById(inspectionId, { signal })
+    if (response.success && response.data) {
+      const checklistResults = response.data.checklistResults ? 
+        JSON.parse(response.data.checklistResults) : []
+      const normalizedImages = (response.data as any).inspectionImages || parseInspectionImages(response.data)
+      return {
+        ...response.data,
+        checklistResults,
+        inspectionImagesList: normalizedImages
+      }
+    }
+    throw new Error('获取点检详情失败')
+  })
 
   // 日期选择器状态
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
@@ -98,7 +115,7 @@ export function InspectionRecordsPage() {
         endDate: dateRange?.to ? format(dateRange.to, 'yyyy-MM-dd') : undefined
       }
 
-      const response = await inspectionApi.getList(params)
+      const response = await inspectionApi.getList(params, { signal: abortControllerRef.current.signal })
       
       // 检查请求是否被取消
       if (abortControllerRef.current?.signal.aborted) {
@@ -165,39 +182,7 @@ export function InspectionRecordsPage() {
   // 解析逻辑已抽离到 utils/imageParse.ts
 
   // 查看点检详情
-  const viewInspectionDetail = async (inspectionId: number) => {
-    // 取消之前的详情请求
-    if (detailAbortRef.current) {
-      detailAbortRef.current.abort()
-    }
-    const controller = new AbortController()
-    detailAbortRef.current = controller
-
-    // 先打开弹窗并展示加载态
-    setDetailDialogOpen(true)
-    setDetailLoading(true)
-    setSelectedInspection(null)
-
-    try {
-      const response = await inspectionApi.getById(inspectionId, { signal: controller.signal })
-      if (controller.signal.aborted) return
-      if (response.success && response.data) {
-        const checklistResults = response.data.checklistResults ? 
-          JSON.parse(response.data.checklistResults) : []
-        const normalizedImages = (response.data as any).inspectionImages || parseInspectionImages(response.data)
-        setSelectedInspection({
-          ...response.data,
-          checklistResults,
-          inspectionImagesList: normalizedImages
-        })
-      }
-    } catch (error: any) {
-      if (error?.name === 'CanceledError' || error?.name === 'AbortError') return
-      log.error('获取点检详情失败', error)
-    } finally {
-      if (!controller.signal.aborted) setDetailLoading(false)
-    }
-  }
+  const viewInspectionDetail = (inspectionId: number) => openDetail(inspectionId)
 
   // 重置筛选条件
   const resetFilters = () => {
@@ -530,20 +515,7 @@ export function InspectionRecordsPage() {
       </Card>
 
       {/* 点检详情对话框 */}
-      <Dialog 
-        open={detailDialogOpen} 
-        onOpenChange={(open) => {
-          setDetailDialogOpen(open)
-          if (!open) {
-            if (detailAbortRef.current) {
-              detailAbortRef.current.abort()
-              detailAbortRef.current = null
-            }
-            setDetailLoading(false)
-            setSelectedInspection(null)
-          }
-        }}
-      >
+      <Dialog open={detailDialogOpen} onOpenChange={onDetailOpenChange}>
         <DialogContent className="max-w-6xl w-[96vw] overflow-x-hidden">
           <DialogHeader>
             <DialogTitle>点检记录详情</DialogTitle>

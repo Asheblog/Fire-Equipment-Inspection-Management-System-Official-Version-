@@ -109,8 +109,8 @@ export const permissionApi = {
     module?: string;
     category?: string;
     isActive?: boolean;
-  }) => {
-    return api.get<Permission[]>('/permissions', { params });
+  }, config?: any) => {
+    return api.get<Permission[]>('/permissions', { ...(config || {}), params: { ...(config?.params || {}), ...(params || {}) } });
   },
 
   // 获取权限模块信息
@@ -139,8 +139,8 @@ export const permissionApi = {
   getRoles: (params?: {
     isActive?: boolean;
     isSystem?: boolean;
-  }) => {
-    return api.get<Role[]>('/permissions/roles', { params });
+  }, config?: any) => {
+    return api.get<Role[]>('/permissions/roles', { ...(config || {}), params: { ...(config?.params || {}), ...(params || {}) } });
   },
 
   // 创建角色
@@ -168,8 +168,8 @@ export const permissionApi = {
   // === 用户权限管理 ===
   
   // 获取用户权限信息
-  getUserPermissions: (userId: number) => {
-    return api.get<UserPermission>(`/permissions/users/${userId}/permissions`);
+  getUserPermissions: (userId: number, config?: any) => {
+    return api.get<UserPermission>(`/permissions/users/${userId}/permissions`, config);
   },
 
   // 分配用户角色
@@ -216,24 +216,24 @@ export const permissionApi = {
     endDate?: string;
     limit?: number;
     offset?: number;
-  }) => {
+  }, config?: any) => {
     return api.get<{
       logs: PermissionLog[];
       total: number;
       limit: number;
       offset: number;
-    }>('/permissions/logs', { params });
+    }>('/permissions/logs', { ...(config || {}), params: { ...(config?.params || {}), ...(params || {}) } });
   },
 
   // 获取权限统计信息
-  getPermissionStats: () => {
+  getPermissionStats: (config?: any) => {
     return api.get<{
       totalPermissions: number;
       totalRoles: number;
       activeRoles: number;
       permissionsByModule: Record<string, number>;
       rolesByLevel: Record<string, number>;
-    }>('/permissions/stats');
+    }>('/permissions/stats', config);
   },
 
   // === 批量操作 ===

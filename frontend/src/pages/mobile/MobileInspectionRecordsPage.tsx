@@ -17,6 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { inspectionApi } from '@/api'
 import { parseInspectionImages, parseIssueImages } from '@/utils/imageParse'
 import type { InspectionLog } from '@/types'
+import { useCancelableDialog } from '@/hooks/useCancelableDialog'
 
 interface InspectionDetail extends Omit<InspectionLog, 'checklistResults'> {
   checklistResults: Array<{
@@ -34,14 +35,30 @@ export function MobileInspectionRecordsPage() {
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
-  const [selectedInspection, setSelectedInspection] = useState<InspectionDetail | null>(null)
-  const [detailDialogOpen, setDetailDialogOpen] = useState(false)
-  const [detailLoading, setDetailLoading] = useState(false)
-  const detailAbortRef = useRef<AbortController | null>(null)
+  const {
+    open: detailDialogOpen,
+    loading: detailLoading,
+    data: selectedInspection,
+    openWith: openDetail,
+    onOpenChange: onDetailOpenChange
+  } = useCancelableDialog<InspectionDetail, number>(async (inspectionId, signal) => {
+    const response = await inspectionApi.getById(inspectionId, { signal })
+    if (response.success && response.data) {
+      const checklistResults = response.data.checklistResults ? JSON.parse(response.data.checklistResults) : []
+      const normalizedImages = (response.data as any).inspectionImages || parseInspectionImages(response.data)
+      return { ...response.data, checklistResults, inspectionImagesList: normalizedImages }
+    }
+    throw new Error('获取点检详情失败')
+  })
+  const listAbortRef = useRef<AbortController | null>(null)
 
   // 加载点检记录
   const loadInspections = async () => {
     try {
+      // 取消前一个列表请求
+      if (listAbortRef.current) listAbortRef.current.abort()
+      const controller = new AbortController()
+      listAbortRef.current = controller
       setLoading(true)
       const params = {
         page: 1,
@@ -49,49 +66,21 @@ export function MobileInspectionRecordsPage() {
         result: statusFilter || undefined
       }
 
-      const response = await inspectionApi.getList(params)
-      if (response.success && response.data) {
+      const response = await inspectionApi.getList(params, { signal: controller.signal })
+      if (!controller.signal.aborted && response.success && response.data) {
         setInspections(response.data.items)
       }
     } catch (error) {
       log.error('获取点检记录失败', error)
     } finally {
-      setLoading(false)
+      if (!listAbortRef.current?.signal.aborted) setLoading(false)
     }
   }
 
   // 解析逻辑已抽离到 utils/imageParse
 
   // 查看点检详情
-  const viewInspectionDetail = async (inspectionId: number) => {
-    // 若存在未完成的请求，先取消
-    if (detailAbortRef.current) {
-      detailAbortRef.current.abort()
-    }
-    const controller = new AbortController()
-    detailAbortRef.current = controller
-
-    // 立即打开弹窗并显示加载态，提升响应性
-    setDetailDialogOpen(true)
-    setDetailLoading(true)
-    setSelectedInspection(null)
-
-    try {
-      const response = await inspectionApi.getById(inspectionId, { signal: controller.signal })
-      // 若已取消，不再处理
-      if (controller.signal.aborted) return
-      if (response.success && response.data) {
-        const checklistResults = response.data.checklistResults ? JSON.parse(response.data.checklistResults) : []
-        const normalizedImages = (response.data as any).inspectionImages || parseInspectionImages(response.data)
-        setSelectedInspection({ ...response.data, checklistResults, inspectionImagesList: normalizedImages })
-      }
-    } catch (error: any) {
-      if (error?.name === 'CanceledError' || error?.name === 'AbortError') return
-      log.error('获取点检详情失败', error)
-    } finally {
-      if (!controller.signal.aborted) setDetailLoading(false)
-    }
-  }
+  const viewInspectionDetail = (inspectionId: number) => openDetail(inspectionId)
 
   // 过滤搜索结果
   const filteredInspections = inspections.filter(inspection => {
@@ -107,6 +96,12 @@ export function MobileInspectionRecordsPage() {
 
   useEffect(() => {
     loadInspections()
+    return () => {
+      if (listAbortRef.current) {
+        listAbortRef.current.abort()
+        listAbortRef.current = null
+      }
+    }
   }, [statusFilter])
 
   return (
@@ -223,21 +218,7 @@ export function MobileInspectionRecordsPage() {
       </div>
 
       {/* 点检详情对话框 */}
-      <Dialog 
-        open={detailDialogOpen} 
-        onOpenChange={(open) => {
-          setDetailDialogOpen(open)
-          if (!open) {
-            // 关闭时取消请求并重置状态
-            if (detailAbortRef.current) {
-              detailAbortRef.current.abort()
-              detailAbortRef.current = null
-            }
-            setDetailLoading(false)
-            setSelectedInspection(null)
-          }
-        }}
-      >
+      <Dialog open={detailDialogOpen} onOpenChange={onDetailOpenChange}>
         {/* 移动端详情弹窗：放宽宽度限制、减少左右留白，避免内容横向溢出 */}
         <DialogContent className="w-[96vw] max-w-none sm:max-w-lg p-4 sm:p-6 overflow-x-hidden">
           <DialogHeader>

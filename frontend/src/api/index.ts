@@ -80,13 +80,19 @@ export const equipmentApi = {
     api.get(`/equipments/location/${qrCode}`),
     
   // 生成二维码图片
-  generateQRImage: (qrCode: string, size?: number): Promise<ApiResponse<{
+  generateQRImage: (qrCode: string, size?: number, config?: any): Promise<ApiResponse<{
     qrCode: string               // 实际编码内容（可能是完整URL）
     originalInput?: string       // 原始传入（纯码）
     imageUrl: string
     size: number
   }>> =>
-    api.get(`/equipments/qr-image/${encodeURIComponent(qrCode)}`, { params: size ? { size } : {} }),
+    api.get(
+      `/equipments/qr-image/${encodeURIComponent(qrCode)}`,
+      {
+        ...(config || {}),
+        params: { ...(config?.params || {}), ...(size ? { size } : {}) }
+      }
+    ),
     
   // 创建器材
   create: (data: Partial<Equipment>): Promise<ApiResponse<Equipment>> =>
@@ -101,8 +107,8 @@ export const equipmentApi = {
     api.delete(`/equipments/${id}`),
     
   // 获取器材类型列表
-  getTypes: (): Promise<ApiResponse<EquipmentType[]>> =>
-    api.get('/equipments/types'),
+  getTypes: (config?: any): Promise<ApiResponse<EquipmentType[]>> =>
+    api.get('/equipments/types', config),
 
   // 创建器材类型
   createType: (data: { name: string }): Promise<ApiResponse<EquipmentType>> =>
@@ -121,8 +127,8 @@ export const equipmentApi = {
     api.delete(`/equipments/types/${id}`),
 
   // 获取器材类型的点检项模板
-  getChecklistTemplates: (typeId: number): Promise<ApiResponse<ChecklistTemplate[]>> =>
-    api.get(`/equipments/types/${typeId}/checklist`),
+  getChecklistTemplates: (typeId: number, config?: any): Promise<ApiResponse<ChecklistTemplate[]>> =>
+    api.get(`/equipments/types/${typeId}/checklist`, config),
 
   // 创建点检项模板
   createChecklistTemplate: (typeId: number, data: { itemName: string }): Promise<ApiResponse<ChecklistTemplate>> =>
@@ -175,8 +181,8 @@ export const inspectionApi = {
     result?: string
     startDate?: string
     endDate?: string
-  }): Promise<PaginatedResponse<InspectionLog>> =>
-    api.get('/inspections', { params }),
+  }, config?: any): Promise<PaginatedResponse<InspectionLog>> =>
+    api.get('/inspections', { ...(config || {}), params: { ...(config?.params || {}), ...(params || {}) } }),
     
   // 根据ID获取点检详情（支持可选的Axios配置，如 signal 取消）
   getById: (id: number, config?: any): Promise<ApiResponse<InspectionLog>> =>
@@ -291,12 +297,12 @@ export const inspectionApi = {
     api.patch(`/inspections/${id}/finalize`, data)
   ,
   // 本月按厂区的点检进度
-  getMonthlyProgress: (params?: { month?: string }): Promise<ApiResponse<{ month: string; total: number; completed: number; pending: number; factories: Array<{ factoryId: number; factoryName: string; total: number; completed: number; pending: number }> }>> =>
-    api.get('/inspections/monthly-progress', { params }),
+  getMonthlyProgress: (params?: { month?: string }, config?: any): Promise<ApiResponse<{ month: string; total: number; completed: number; pending: number; factories: Array<{ factoryId: number; factoryName: string; total: number; completed: number; pending: number }> }>> =>
+    api.get('/inspections/monthly-progress', { ...(config || {}), params: { ...(config?.params || {}), ...(params || {}) } }),
 
   // 获取指定厂区本月未完成点检设备
-  getMonthlyPending: (factoryId: number, month?: string): Promise<ApiResponse<Equipment[]>> =>
-    api.get('/inspections/monthly-pending', { params: { factoryId, month } })
+  getMonthlyPending: (factoryId: number, month?: string, config?: any): Promise<ApiResponse<Equipment[]>> =>
+    api.get('/inspections/monthly-pending', { ...(config || {}), params: { ...(config?.params || {}), factoryId, month } })
 }
 
 // 隐患相关API
@@ -320,8 +326,8 @@ export const issueApi = {
     severity?: 'LOW'|'MEDIUM'|'HIGH'|'CRITICAL'
     sortBy?: 'createdAt' | 'handledAt' | 'severity'
     sortOrder?: 'asc' | 'desc'
-  }): Promise<PaginatedResponse<Issue>> =>
-    api.get('/issues', { params }) as unknown as Promise<PaginatedResponse<Issue>>, // 约定后端返回 data: { items, total, page, pageSize, totalPages }
+  }, config?: any): Promise<PaginatedResponse<Issue>> =>
+    api.get('/issues', { ...(config || {}), params: { ...(config?.params || {}), ...(params || {}) } }) as unknown as Promise<PaginatedResponse<Issue>>, // 约定后端返回 data: { items, total, page, pageSize, totalPages }
     
   // 根据ID获取隐患详情
   getById: (id: number): Promise<ApiResponse<Issue>> =>

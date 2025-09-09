@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { createLogger } from '@/lib/logger'
 import { useAuthStore } from '@/stores/auth'
 import { equipmentApi } from '@/api'
+import { useCancelableDialog } from '@/hooks/useCancelableDialog'
 import { isValidationError, extractValidationErrors, showValidationSummary, focusFirstError } from '@/utils/validation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -134,9 +135,17 @@ export const EquipmentTypesPage: React.FC = () => {
   
   // 点检项管理状态
   const [selectedType, setSelectedType] = useState<EquipmentType | null>(null)
-  const [checklistDialogOpen, setChecklistDialogOpen] = useState(false)
-  const [checklistTemplates, setChecklistTemplates] = useState<ChecklistTemplate[]>([])
-  const [checklistLoading, setChecklistLoading] = useState(false)
+  const {
+    open: checklistDialogOpen,
+    loading: checklistLoading,
+    data: checklistTemplates,
+    openWith: openChecklist,
+    onOpenChange: onChecklistOpenChange
+  } = useCancelableDialog<ChecklistTemplate[], number>(async (typeId, signal) => {
+    const response = await equipmentApi.getChecklistTemplates(typeId, { signal })
+    if (response.success && response.data) return response.data
+    return []
+  })
   
   // 批量添加点检项状态
   const [addMode, setAddMode] = useState<'single' | 'batch'>('single')
@@ -172,24 +181,7 @@ export const EquipmentTypesPage: React.FC = () => {
   }
 
   // 加载点检项模板
-  const loadChecklistTemplates = async (typeId: number) => {
-    try {
-      setChecklistLoading(true)
-      const response = await equipmentApi.getChecklistTemplates(typeId)
-      
-      if (response.success && response.data) {
-        setChecklistTemplates(response.data)
-      } else {
-        setChecklistTemplates([])
-      }
-      
-    } catch (err: any) {
-      log.error('加载点检项模板失败', err)
-      setChecklistTemplates([])
-    } finally {
-      setChecklistLoading(false)
-    }
-  }
+  const loadChecklistTemplates = async (typeId: number) => openChecklist(typeId)
 
   useEffect(() => {
     loadData()
@@ -233,7 +225,6 @@ export const EquipmentTypesPage: React.FC = () => {
   // 管理点检项
   const handleManageChecklist = async (type: EquipmentType) => {
     setSelectedType(type)
-    setChecklistDialogOpen(true)
     // 重置批量输入状态
     resetBatchInput()
     await loadChecklistTemplates(type.id)
@@ -497,7 +488,7 @@ export const EquipmentTypesPage: React.FC = () => {
       />
 
       {/* 点检项管理对话框 */}
-      <Dialog open={checklistDialogOpen} onOpenChange={setChecklistDialogOpen}>
+      <Dialog open={checklistDialogOpen} onOpenChange={onChecklistOpenChange}>
         <DialogContent className="max-w-2xl w-[96vw] overflow-x-hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center space-x-2">
@@ -600,7 +591,7 @@ export const EquipmentTypesPage: React.FC = () => {
                   <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary mx-auto mb-2"></div>
                   <p className="text-sm text-muted-foreground">加载中...</p>
                 </div>
-              ) : checklistTemplates.length === 0 ? (
+              ) : (checklistTemplates || []).length === 0 ? (
                 <div className="text-center py-8">
                   <ListChecks className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                   <p className="text-muted-foreground">暂无点检项目</p>
@@ -608,7 +599,7 @@ export const EquipmentTypesPage: React.FC = () => {
                 </div>
               ) : (
                 <div className="space-y-2 max-h-96 overflow-y-auto">
-                  {checklistTemplates.map((template, index) => (
+                  {(checklistTemplates || []).map((template, index) => (
                     <div key={template.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                       <div className="flex items-center space-x-3">
                         <Badge variant="outline">{index + 1}</Badge>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { createLogger } from '@/lib/logger'
 import { formatQrCodeDisplay } from '@/utils/qrCode'
 import { useAuthStore } from '@/stores/auth'
@@ -213,6 +213,7 @@ export const IssuePage: React.FC = () => {
   const [trendView, setTrendView] = useState<'stack'|'new'|'closed'>('stack')
   const [analysisOpen, setAnalysisOpen] = useState(false)
   const [analysisLoading, setAnalysisLoading] = useState(false)
+  const listAbortRef = useRef<AbortController | null>(null)
   // 头部标签计数（与当前列表无关，受筛选条件影响）
   const [headerCounts, setHeaderCounts] = useState<{ pending: number; pendingAudit: number; closed: number }>({ pending: 0, pendingAudit: 0, closed: 0 })
   
@@ -240,10 +241,13 @@ export const IssuePage: React.FC = () => {
   const loadIssues = async (page = 1, tabOverride?: string) => {
     try {
       setLoading(true)
-      const response = await issueApi.getList(buildParams(page, tabOverride))
+      if (listAbortRef.current) listAbortRef.current.abort()
+      const controller = new AbortController()
+      listAbortRef.current = controller
+      const response = await issueApi.getList(buildParams(page, tabOverride), { signal: controller.signal })
       log.debug('加载隐患列表 响应', { ok: response.success, count: response.data?.items?.length })
       const { data } = response
-      if (data && Array.isArray(data.items)) {
+      if (!controller.signal.aborted && data && Array.isArray(data.items)) {
         setIssues(data.items)
         setPagination({
           page: data.page,
@@ -252,7 +256,8 @@ export const IssuePage: React.FC = () => {
           totalPages: data.totalPages
         })
       }
-    } catch (error) {
+    } catch (error: any) {
+      if (error?.name === 'AbortError' || error?.name === 'CanceledError') return
       log.error('加载隐患列表失败', error)
     } finally {
       setLoading(false)
@@ -367,6 +372,12 @@ export const IssuePage: React.FC = () => {
   useEffect(() => {
     loadIssues(1, activeTab)
     refreshHeaderCounts()
+    return () => {
+      if (listAbortRef.current) {
+        listAbortRef.current.abort()
+        listAbortRef.current = null
+      }
+    }
   }, [])
 
   const loadStatsAndTrend = async () => {

@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { PageContainer } from '@/components/layout'
+import { useCancelableDialog } from '@/hooks/useCancelableDialog'
 import { 
   Scan, 
   User, 
@@ -33,8 +34,13 @@ export const MobileDashboard: React.FC = () => {
   const { user, factory, factories, logout } = useAuthStore()
   const [progress, setProgress] = useState<MonthlyProgress | null>(null)
   const [pendingFactoryId, setPendingFactoryId] = useState<number | null>(null)
-  const [pendingList, setPendingList] = useState<any[]>([])
-  const [pendingOpen, setPendingOpen] = useState(false)
+  const { open: pendingOpen, loading: pendingLoading, data: pendingList, openWith: openPendingWith, close: closePending } = useCancelableDialog<any[], number>(
+    async (fid, signal) => {
+      const res = await inspectionApi.getMonthlyPending(fid, undefined, { signal })
+      if (res.success) return (res.data as any[]) || []
+      return []
+    }
+  )
   const pendingRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -50,16 +56,9 @@ export const MobileDashboard: React.FC = () => {
   }, [])
 
   const openPending = async (fid: number) => {
-    try {
-      setPendingFactoryId(fid)
-      const res = await inspectionApi.getMonthlyPending(fid)
-      if (res.success) {
-        setPendingList(res.data as any[])
-        setPendingOpen(true)
-      }
-    } catch (e) {
-      log.error('加载未完成列表失败', e)
-    }
+    setPendingFactoryId(fid)
+    // 立即打开并显示加载状态，由 hook 管理取消
+    openPendingWith(fid)
   }
 
   // 当未完成列表打开时，自动滚动到对应位置
@@ -221,20 +220,26 @@ export const MobileDashboard: React.FC = () => {
               <CardTitle className="text-lg">未完成点检（{(factories||[]).find(f=>f.id===pendingFactoryId)?.name || factory?.name}）</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {pendingList.length === 0 ? (
+              {pendingLoading && (
+                <div className="text-sm text-muted-foreground">加载中...</div>
+              )}
+              {!pendingLoading && ((pendingList || []).length === 0) && (
                 <div className="text-sm text-muted-foreground">该厂区本月已全部完成</div>
-              ) : (
-                pendingList.slice(0, 20).map((e) => (
-                  <div key={e.id} className="text-sm flex items-center justify-between">
-                    <div>
-                      <div className="font-medium">{e.name}</div>
-                      <div className="text-xs text-muted-foreground">位置：{e.location}</div>
+              )}
+              {!pendingLoading && (pendingList || []).length > 0 && (
+                <>
+                  {(pendingList || []).slice(0, 20).map((e: any) => (
+                    <div key={e.id} className="text-sm flex items-center justify-between">
+                      <div>
+                        <div className="font-medium">{e.name}</div>
+                        <div className="text-xs text-muted-foreground">位置：{e.location}</div>
+                      </div>
                     </div>
-                  </div>
-                ))
+                  ))}
+                </>
               )}
               <div className="pt-2">
-                <Button className="w-full" variant="secondary" onClick={() => setPendingOpen(false)}>关闭</Button>
+                <Button className="w-full" variant="secondary" onClick={() => closePending()}>关闭</Button>
               </div>
             </CardContent>
           </Card>

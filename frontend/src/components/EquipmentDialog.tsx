@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { createLogger } from '@/lib/logger'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -92,6 +92,7 @@ export const EquipmentDialog: React.FC<EquipmentDialogProps> = ({
   const [loading, setLoading] = useState(false)
   const [types, setTypes] = useState<EquipmentType[]>([])
   const [typesLoading, setTypesLoading] = useState(false)
+  const typesAbortRef = useRef<AbortController | null>(null)
 
   const isEdit = !!equipment
 
@@ -107,24 +108,38 @@ export const EquipmentDialog: React.FC<EquipmentDialogProps> = ({
     },
   })
 
-  // 加载器材类型
+  // 加载器材类型（可取消）
   useEffect(() => {
     const loadTypes = async () => {
+      if (typesAbortRef.current) typesAbortRef.current.abort()
+      const controller = new AbortController()
+      typesAbortRef.current = controller
       try {
         setTypesLoading(true)
-        const response = await equipmentApi.getTypes()
-        if (response.success && response.data) {
+        const response = await equipmentApi.getTypes({ signal: controller.signal })
+        if (!controller.signal.aborted && response.success && response.data) {
           setTypes(response.data)
         }
-      } catch (error) {
+      } catch (error: any) {
+        if (error?.name === 'CanceledError' || error?.name === 'AbortError') return
         log.error('加载器材类型失败', error)
       } finally {
-        setTypesLoading(false)
+        if (!typesAbortRef.current?.signal.aborted) setTypesLoading(false)
       }
     }
 
     if (open) {
       loadTypes()
+    } else if (typesAbortRef.current) {
+      typesAbortRef.current.abort()
+      typesAbortRef.current = null
+    }
+
+    return () => {
+      if (typesAbortRef.current) {
+        typesAbortRef.current.abort()
+        typesAbortRef.current = null
+      }
     }
   }, [open])
 
@@ -192,6 +207,10 @@ export const EquipmentDialog: React.FC<EquipmentDialogProps> = ({
   const handleClose = () => {
     onOpenChange(false)
     form.reset()
+    if (typesAbortRef.current) {
+      typesAbortRef.current.abort()
+      typesAbortRef.current = null
+    }
   }
 
   return (

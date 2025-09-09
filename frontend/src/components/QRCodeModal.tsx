@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { createLogger } from '@/lib/logger'
 import { equipmentApi } from '@/api'
 import {
@@ -29,10 +29,18 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({
   const [qrImageUrl, setQrImageUrl] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>('')
+  const abortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     if (open && equipment?.qrCode) {
       generateQRImage()
+    }
+    // 关闭时中断生成请求，避免状态泄漏
+    return () => {
+      if (abortRef.current) {
+        abortRef.current.abort()
+        abortRef.current = null
+      }
     }
   }, [open, equipment])
 
@@ -41,9 +49,15 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({
 
     setLoading(true)
     setError('')
-    
+    // 取消前一个请求
+    if (abortRef.current) {
+      abortRef.current.abort()
+    }
+    const controller = new AbortController()
+    abortRef.current = controller
+
     try {
-      const response = await equipmentApi.generateQRImage(equipment.qrCode, 300)
+      const response = await equipmentApi.generateQRImage(equipment.qrCode, 300, { signal: controller.signal })
       if (response.success && response.data) {
         setQrImageUrl(response.data.imageUrl)
       } else {
@@ -53,7 +67,7 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({
       log.error('生成二维码失败', err)
       setError('生成二维码失败，请稍后重试')
     } finally {
-      setLoading(false)
+      if (!controller.signal.aborted) setLoading(false)
     }
   }
 
@@ -74,7 +88,13 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog open={open} onOpenChange={(o)=>{
+      onClose()
+      if (!o && abortRef.current) {
+        abortRef.current.abort()
+        abortRef.current = null
+      }
+    }}>
       <DialogContent className="sm:max-w-md w-[92vw] overflow-x-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center space-x-2">

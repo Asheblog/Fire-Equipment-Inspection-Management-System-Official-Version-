@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { createLogger } from '@/lib/logger'
 import { permissionApi } from '@/api'
 import type { Permission, Role, UserPermission } from '@/api/permissions'
@@ -47,15 +47,19 @@ export const UserPermissionDialog: React.FC<UserPermissionDialogProps> = ({
   const [activeTab, setActiveTab] = useState('overview')
   const [reason, setReason] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
+  const abortRef = useRef<AbortController | null>(null)
 
   // 获取用户权限信息
   const loadUserPermissions = async () => {
+    if (abortRef.current) abortRef.current.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
     setLoading(true)
     try {
       const [userPermsRes, rolesRes, permsRes] = await Promise.all([
-        permissionApi.getUserPermissions(userId),
-        permissionApi.getRoles({ isActive: true }),
-        permissionApi.getPermissions({ isActive: true })
+        permissionApi.getUserPermissions(userId, { signal: controller.signal }),
+        permissionApi.getRoles({ isActive: true }, { signal: controller.signal }),
+        permissionApi.getPermissions({ isActive: true }, { signal: controller.signal })
       ])
       
       // 后端接口按约定应返回 data 数组/对象；若封装层未解包则这里兼容两种形态，避免出现 filter 不是函数错误
@@ -73,20 +77,32 @@ export const UserPermissionDialog: React.FC<UserPermissionDialogProps> = ({
           ? (permsRes as any).data
           : []
 
-      setUserPermissions(resolvedUserPerms || null)
-      setAllRoles(resolvedRoles as Role[])
-      setAllPermissions(resolvedPerms as Permission[])
-    } catch (error) {
+      if (!controller.signal.aborted) {
+        setUserPermissions(resolvedUserPerms || null)
+        setAllRoles(resolvedRoles as Role[])
+        setAllPermissions(resolvedPerms as Permission[])
+      }
+    } catch (error: any) {
+      if (error?.name === 'CanceledError' || error?.name === 'AbortError') return
       log.error('获取用户权限失败', error)
       toast.error('获取权限信息失败')
     } finally {
-      setLoading(false)
+      if (!controller.signal.aborted) setLoading(false)
     }
   }
 
   useEffect(() => {
     if (open && userId) {
       loadUserPermissions()
+    } else if (!open && abortRef.current) {
+      abortRef.current.abort()
+      abortRef.current = null
+    }
+    return () => {
+      if (abortRef.current) {
+        abortRef.current.abort()
+        abortRef.current = null
+      }
     }
   }, [open, userId])
 
