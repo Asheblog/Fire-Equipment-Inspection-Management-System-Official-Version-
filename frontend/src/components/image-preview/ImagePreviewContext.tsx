@@ -189,6 +189,44 @@ const Overlay: React.FC<{
     zoomBy(dy > 0 ? -0.2 : 0.2)
   }
 
+  // Ensure non-passive wheel listener on container, and as a fallback also on window
+  React.useEffect(() => {
+    const el = containerRef.current
+    const onWheelNative = (e: WheelEvent) => {
+      e.preventDefault()
+      const dy = e.deltaY
+      zoomBy(dy > 0 ? -0.2 : 0.2)
+    }
+    if (el) el.addEventListener('wheel', onWheelNative, { passive: false })
+    // Fallback: intercept wheel globally while preview is open
+    if (state.open) window.addEventListener('wheel', onWheelNative, { passive: false })
+    return () => {
+      if (el) el.removeEventListener('wheel', onWheelNative as EventListener)
+      window.removeEventListener('wheel', onWheelNative as EventListener)
+    }
+  }, [zoomBy, state.open])
+
+  // Lock body scroll while preview is open
+  React.useEffect(() => {
+    if (!state.open) return
+    const prevBody = document.body.style.overflow
+    const prevHtml = (document.documentElement && (document.documentElement as HTMLElement).style.overflow) || ''
+    document.body.style.overflow = 'hidden'
+    try { (document.documentElement as HTMLElement).style.overflow = 'hidden' } catch {}
+    // Prevent scroll on touch devices outside the overlay
+    const onTouchMove = (e: TouchEvent) => {
+      const target = e.target as Node | null
+      if (target && containerRef.current && containerRef.current.contains(target)) return
+      e.preventDefault()
+    }
+    window.addEventListener('touchmove', onTouchMove, { passive: false })
+    return () => {
+      document.body.style.overflow = prevBody
+      try { (document.documentElement as HTMLElement).style.overflow = prevHtml } catch {}
+      window.removeEventListener('touchmove', onTouchMove as EventListener)
+    }
+  }, [state.open])
+
   const onPointerDown: React.PointerEventHandler<HTMLDivElement> = (e) => {
     ;(e.target as HTMLElement).setPointerCapture?.(e.pointerId)
     pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
@@ -252,10 +290,16 @@ const Overlay: React.FC<{
   // Double tap toggles zoom
   const lastTapRef = useRef<number>(0)
   const onDoubleTap = () => {
-    setScale((prev) => (prev > 1 ? 1 : 2))
-    if (scale === 1) { setTx(0); setTy(0) }
+    setScale((prev) => {
+      const next = prev > 1 ? 1 : 2
+      if (prev <= 1) { setTx(0); setTy(0) }
+      return next
+    })
   }
-  const onClickContainer: React.MouseEventHandler<HTMLDivElement> = () => {
+  const onClickContainer: React.MouseEventHandler<HTMLDivElement> = (e) => {
+    const target = e.target as HTMLElement
+    // 仅当点击图片本身时才认为是双击/双点
+    if (!(target && target.tagName === 'IMG')) return
     const now = Date.now()
     if (now - lastTapRef.current < 300) {
       onDoubleTap()
@@ -311,22 +355,22 @@ const Overlay: React.FC<{
   }
 
   const toolbar = (
-    <div className="absolute top-3 right-3 flex items-center gap-2 z-50">
-      <button aria-label="缩小" className="p-2 bg-black/40 text-white rounded hover:bg-black/60" onClick={() => zoomBy(-0.2)}>
+    <div className="absolute top-3 right-3 flex items-center gap-2 z-50" onClick={(e) => e.stopPropagation()}>
+      <button aria-label="缩小" className="p-2 bg-black/40 text-white rounded hover:bg-black/60" onClick={(e) => { e.stopPropagation(); zoomBy(-0.2) }}>
         <ZoomOut className="w-5 h-5" />
       </button>
-      <button aria-label="放大" className="p-2 bg-black/40 text-white rounded hover:bg-black/60" onClick={() => zoomBy(0.2)}>
+      <button aria-label="放大" className="p-2 bg-black/40 text-white rounded hover:bg-black/60" onClick={(e) => { e.stopPropagation(); zoomBy(0.2) }}>
         <ZoomIn className="w-5 h-5" />
       </button>
-      <button aria-label="重置" className="p-2 bg-black/40 text-white rounded hover:bg-black/60" onClick={resetView}>
+      <button aria-label="重置" className="p-2 bg-black/40 text-white rounded hover:bg-black/60" onClick={(e) => { e.stopPropagation(); resetView() }}>
         <RotateCcw className="w-5 h-5" />
       </button>
       {enableDownload && (
-        <button aria-label="下载" className="p-2 bg-black/40 text-white rounded hover:bg-black/60" onClick={downloadCurrent}>
+        <button aria-label="下载" className="p-2 bg-black/40 text-white rounded hover:bg-black/60" onClick={(e) => { e.stopPropagation(); downloadCurrent() }}>
           <DownloadIcon className="w-5 h-5" />
         </button>
       )}
-      <button aria-label="关闭" className="p-2 bg-black/40 text-white rounded hover:bg-black/60" onClick={onClose}>
+      <button aria-label="关闭" className="p-2 bg-black/40 text-white rounded hover:bg-black/60" onClick={(e) => { e.stopPropagation(); onClose() }}>
         <X className="w-5 h-5" />
       </button>
     </div>
@@ -337,14 +381,14 @@ const Overlay: React.FC<{
       <button
         aria-label="上一张"
         className="absolute left-3 top-1/2 -translate-y-1/2 p-3 bg-black/30 text-white rounded-full hover:bg-black/50 z-50"
-        onClick={() => goto(index - 1)}
+        onClick={(e) => { e.stopPropagation(); goto(index - 1) }}
       >
         <ChevronLeft className="w-6 h-6" />
       </button>
       <button
         aria-label="下一张"
         className="absolute right-3 top-1/2 -translate-y-1/2 p-3 bg-black/30 text-white rounded-full hover:bg-black/50 z-50"
-        onClick={() => goto(index + 1)}
+        onClick={(e) => { e.stopPropagation(); goto(index + 1) }}
       >
         <ChevronRight className="w-6 h-6" />
       </button>
@@ -352,7 +396,7 @@ const Overlay: React.FC<{
   )
 
   const indicator = (
-    <div className="absolute top-3 left-1/2 -translate-x-1/2 text-white text-sm bg-black/30 px-2 py-1 rounded z-50">
+    <div className="absolute top-3 left-1/2 -translate-x-1/2 text-white text-sm bg-black/30 px-2 py-1 rounded z-50" onClick={(e) => e.stopPropagation()}>
       {index + 1} / {items.length}
     </div>
   )
@@ -360,7 +404,7 @@ const Overlay: React.FC<{
   return createPortal(
     <div
       ref={containerRef}
-      className="fixed inset-0 z-[60] bg-black/90 select-none touch-none"
+      className="fixed inset-0 z-[9999] bg-black/90 select-none touch-none overscroll-contain"
       onWheel={onWheel}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -395,14 +439,14 @@ const Overlay: React.FC<{
         )}
       </div>
       {thumbnails && items.length > 1 && (
-        <div className="absolute bottom-0 left-0 right-0 pb-3 pt-6 bg-gradient-to-t from-black/60 to-transparent">
+        <div className="absolute bottom-0 left-0 right-0 pb-3 pt-6 bg-gradient-to-t from-black/60 to-transparent" onClick={(e) => e.stopPropagation()}>
           <div className="px-4 overflow-x-auto">
             <div className="flex gap-2">
               {items.map((it, i) => {
                 const u = urlCacheRef.current.get(it.src)
                 const isActive = i === index
                 return (
-                  <button key={i} className={`flex-shrink-0 w-14 h-14 rounded overflow-hidden border ${isActive ? 'border-white' : 'border-white/30'} bg-black/30`} onClick={() => setIndex(i)}>
+                  <button key={i} className={`flex-shrink-0 w-14 h-14 rounded overflow-hidden border ${isActive ? 'border-white' : 'border-white/30'} bg-black/30`} onClick={(e) => { e.stopPropagation(); setIndex(i) }}>
                     {u ? (
                       <img src={u} alt={it.alt || ''} className="w-full h-full object-cover" />
                     ) : (
