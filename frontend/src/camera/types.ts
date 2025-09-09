@@ -53,10 +53,14 @@ export interface TrackControls {
    * ratio: 0~1 映射到可用对焦距离（0 = 最小 / 远；1 = 最大 / 近；具体取决于浏览器实现）
    */
   setManualFocus(ratio: number): Promise<boolean>;
+  /** 可选：设置对焦点坐标（0~1），若不支持返回 false */
+  setPointOfInterest?(nx: number, ny: number): Promise<boolean>;
 }
 
 export interface SessionOptions {
   facingMode?: 'environment' | 'user';
+  /** 指定具体设备（优先级高于 facingMode）。当不可用时自动回退 */
+  deviceId?: string;
   orientationPolicy?: OrientationPolicy;
   aspectPolicy?: AspectPolicy;
   preferResolutions?: Array<{ width: number; height: number }>;

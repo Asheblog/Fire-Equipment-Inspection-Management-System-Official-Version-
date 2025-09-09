@@ -15,6 +15,12 @@ export function createTrackControls(track: MediaStreamTrack): TrackControls {
       ? (track as any).getCapabilities()
       : {};
 
+  // 可选：ImageCapture 兜底能力（安卓上更常见）
+  const ImageCaptureCtor: any = (typeof (window as any) !== 'undefined' && (window as any).ImageCapture)
+    ? (window as any).ImageCapture
+    : null;
+  const imageCapture: any = ImageCaptureCtor ? new ImageCaptureCtor(track) : null;
+
   // 解析对焦能力
   const focusModesRaw: string[] = Array.isArray(caps.focusMode) ? caps.focusMode : [];
   const hasSingleShot = focusModesRaw.includes('single-shot');
@@ -48,6 +54,15 @@ export function createTrackControls(track: MediaStreamTrack): TrackControls {
       return true;
     } catch (e) {
       console.warn('[camera][trackControls] setTorch failed', e);
+      // 兜底：通过 ImageCapture 尝试
+      if (imageCapture && typeof imageCapture.setOptions === 'function') {
+        try {
+          await imageCapture.setOptions({ torch: on } as any);
+          return true;
+        } catch (e2) {
+          console.warn('[camera][trackControls] setTorch via ImageCapture failed', e2);
+        }
+      }
       return false;
     }
   }
@@ -57,12 +72,21 @@ export function createTrackControls(track: MediaStreamTrack): TrackControls {
   }
 
   async function applySingleShotFocus(): Promise<boolean> {
-    if (!support.focus.singleShot) return false;
+    // 即使不宣称支持，也尝试触发（部分安卓未暴露但可用）
     try {
       await track.applyConstraints({ advanced: [{ focusMode: 'single-shot' }] } as any);
       return true;
     } catch (e) {
       console.warn('[camera][trackControls] single-shot focus failed', e);
+      // 兜底：ImageCapture.setOptions
+      if (imageCapture && typeof imageCapture.setOptions === 'function') {
+        try {
+          await imageCapture.setOptions({ focusMode: 'single-shot' } as any);
+          return true;
+        } catch (e2) {
+          console.warn('[camera][trackControls] single-shot via ImageCapture failed', e2);
+        }
+      }
       return false;
     }
   }
@@ -72,9 +96,9 @@ export function createTrackControls(track: MediaStreamTrack): TrackControls {
    * 说明：不同浏览器含义可能相反（远/近），此处直接线性映射，不做语义翻转。
    */
   async function setManualFocus(ratio: number): Promise<boolean> {
-    if (!support.focus.manual) return false;
+    // 即使不宣称支持，也尝试触发（某些设备未完整暴露能力）
     const r = Math.min(1, Math.max(0, ratio));
-    const { min, max } = support.focus.manual;
+    const { min, max } = (support.focus.manual || { min: 0, max: 1 }) as any;
     const distance = min + (max - min) * r;
     try {
       // 设置手动对焦通常需要同时指定 focusMode 为 'manual'
@@ -82,6 +106,31 @@ export function createTrackControls(track: MediaStreamTrack): TrackControls {
       return true;
     } catch (e) {
       console.warn('[camera][trackControls] manual focus failed', e);
+      // 兜底：ImageCapture.setOptions
+      if (imageCapture && typeof imageCapture.setOptions === 'function') {
+        try {
+          await imageCapture.setOptions({ focusMode: 'manual', focusDistance: distance } as any);
+          return true;
+        } catch (e2) {
+          console.warn('[camera][trackControls] manual via ImageCapture failed', e2);
+        }
+      }
+      return false;
+    }
+  }
+
+  /**
+   * 可选：设置对焦点（0~1 归一化坐标）
+   * 通过 ImageCapture.setOptions(pointsOfInterest) + single-shot 触发
+   */
+  async function setPointOfInterest(nx: number, ny: number): Promise<boolean> {
+    if (!imageCapture || typeof imageCapture.setOptions !== 'function') return false;
+    try {
+      await imageCapture.setOptions({ pointsOfInterest: [{ x: nx, y: ny }] } as any);
+      try { await imageCapture.setOptions({ focusMode: 'single-shot' } as any); } catch {}
+      return true;
+    } catch (e) {
+      console.warn('[camera][trackControls] setPointOfInterest failed', e);
       return false;
     }
   }
@@ -91,6 +140,7 @@ export function createTrackControls(track: MediaStreamTrack): TrackControls {
     setTorch,
     getSupport,
     applySingleShotFocus,
-    setManualFocus
+    setManualFocus,
+    setPointOfInterest
   };
 }

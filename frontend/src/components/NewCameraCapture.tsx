@@ -11,6 +11,7 @@ import type {
   TrackControlsSupport
 } from '@/camera/types';
 import { CameraErrorCode } from '@/camera/types';
+import { processFrame } from '@/camera/frameProcessor';
 
 /**
  * 新版拍照组件 NewCameraCapture
@@ -61,10 +62,13 @@ interface UIState {
 
 const deviceManagerSingleton = createCameraDeviceManager();
 
-// iOS 设备检测（用于在无硬件 torch 支持的 iOS 上隐藏闪光按钮，避免“点了不亮”的误导）
+// 设备检测
 const isIOS =
   /iP(hone|ad|od)/.test(navigator.userAgent) ||
   (navigator.platform === 'MacIntel' && (navigator as any).maxTouchPoints > 1);
+const isAndroid = /Android/i.test(navigator.userAgent);
+// 暂时关闭调试叠层渲染（即使外部传入 debug 也不显示）
+const SHOW_DEBUG_OVERLAY = false;
 
 export const NewCameraCapture: React.FC<NewCameraCaptureProps> = ({
   onCapture,
@@ -97,6 +101,7 @@ export const NewCameraCapture: React.FC<NewCameraCaptureProps> = ({
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [notSupported, setNotSupported] = useState(false);
   const [starting, setStarting] = useState(false);
+  const startingRef = useRef(false);
   const videoAttachedRef = useRef(false);
 
   // 拍照状态与冷却
@@ -115,6 +120,23 @@ export const NewCameraCapture: React.FC<NewCameraCaptureProps> = ({
 
   const [focusPoint, setFocusPoint] = useState<{ x: number; y: number } | null>(null);
   const focusHideTimerRef = useRef<number | null>(null);
+  const autoBestTriedRef = useRef(false);
+  // 移除最高清自动初始化逻辑
+
+  // 调试：当前 track/设备信息 & 所有摄像头列表
+  const [currentDeviceInfo, setCurrentDeviceInfo] = useState<{
+    deviceId?: string;
+    label?: string;
+    facingMode?: string;
+    width?: number;
+    height?: number;
+    frameRate?: number;
+    capWidthMax?: number;
+    capHeightMax?: number;
+  } | null>(null);
+  const [allCameras, setAllCameras] = useState<Array<{ deviceId: string; label: string }>>([]);
+  const [cameraCaps, setCameraCaps] = useState<Record<string, { maxW?: number; maxH?: number; note?: string }>>({});
+  const [forcedDeviceId, setForcedDeviceId] = useState<string | null>(null);
 
   // 组件卸载清理
   useEffect(() => {
@@ -177,22 +199,36 @@ export const NewCameraCapture: React.FC<NewCameraCaptureProps> = ({
 
     const controls = trackControlsRef.current;
     if (!controls) return;
+    const nx = Math.min(1, Math.max(0, x / rect.width));
+    const ny = Math.min(1, Math.max(0, y / rect.height));
 
     if (support.focus.manual) {
       // 使用垂直位置映射 0~1
       const ratio = 1 - Math.min(1, Math.max(0, y / rect.height));
       controls.setManualFocus(ratio);
+      // 同时尝试设置对焦点（部分安卓机对手动焦距不敏感，仅对 POI 生效）
+      if ((controls as any).setPointOfInterest) {
+        (controls as any).setPointOfInterest(nx, ny);
+      }
     } else if (support.focus.singleShot) {
-      controls.applySingleShotFocus();
+      // 先尝试设置对焦点，再触发单次对焦
+      if ((controls as any).setPointOfInterest) {
+        (controls as any).setPointOfInterest(nx, ny).finally(() => {
+          controls.applySingleShotFocus();
+        });
+      } else {
+        controls.applySingleShotFocus();
+      }
     }
   };
 
   // 内部启动逻辑
-  const startSession = useCallback(async (userGesture = false) => {
-    if (starting) return;
+  const startSession = useCallback(async (userGesture = false, allowRetryOnForcedFail = true, internalRetry = false) => {
+    if (startingRef.current && !internalRetry) return;
     const seq = ++startSeqRef.current;
     if (debug) console.log('[NewCameraCapture] startSession attempt', seq, { userGesture });
 
+    startingRef.current = true;
     setStarting(true);
     setNeedUserGesture(false);
     setPermissionDenied(false);
@@ -217,6 +253,7 @@ export const NewCameraCapture: React.FC<NewCameraCaptureProps> = ({
       watermark,
       watermarkBuilder,
       facingMode,
+      deviceId: forcedDeviceId || undefined,
       debug
     };
 
@@ -245,6 +282,33 @@ export const NewCameraCapture: React.FC<NewCameraCaptureProps> = ({
       // 读取增强能力
       const controls = session.getTrackControls();
       trackControlsRef.current = controls;
+      // 收集当前 track 设备信息（用于调试显示）
+      try {
+        const v = session.getVideoEl();
+        const stream = v?.srcObject as MediaStream | null;
+        const track = stream?.getVideoTracks?.()[0];
+        const settings: MediaTrackSettings | undefined = track && (typeof track.getSettings === 'function') ? track.getSettings() : undefined;
+        const caps: any = track && (typeof (track as any).getCapabilities === 'function') ? (track as any).getCapabilities() : null;
+        setCurrentDeviceInfo({
+          deviceId: settings?.deviceId,
+          label: track?.label || undefined,
+          facingMode: settings?.facingMode as any,
+          width: settings?.width,
+          height: settings?.height,
+          frameRate: settings?.frameRate as any,
+          capWidthMax: caps?.width && typeof caps.width.max === 'number' ? caps.width.max : undefined,
+          capHeightMax: caps?.height && typeof caps.height.max === 'number' ? caps.height.max : undefined
+        });
+      } catch {}
+      // 仅列举所有摄像头（需权限）。注意：不在此处主动打开其它摄像头，避免安卓设备卡死。
+      (async () => {
+        try {
+          if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+          const list = await navigator.mediaDevices.enumerateDevices();
+          const vids = list.filter(d => d.kind === 'videoinput').map(d => ({ deviceId: d.deviceId, label: d.label || '(未命名摄像头)' }));
+          setAllCameras(vids);
+        } catch {}
+      })();
       try {
         if (controls) {
           const sup = controls.getSupport();
@@ -295,11 +359,45 @@ export const NewCameraCapture: React.FC<NewCameraCaptureProps> = ({
           containerRef.current.innerHTML = '';
           containerRef.current.appendChild(v);
           videoAttachedRef.current = true;
+          // 附加后再更新一次当前 track 信息（以防初始化前 settings 为空）
+          try {
+            const stream = v?.srcObject as MediaStream | null;
+            const track = stream?.getVideoTracks?.()[0];
+            const settings: MediaTrackSettings | undefined = track && (typeof track.getSettings === 'function') ? track.getSettings() : undefined;
+            const caps: any = track && (typeof (track as any).getCapabilities === 'function') ? (track as any).getCapabilities() : null;
+            setCurrentDeviceInfo(prev => ({
+              deviceId: settings?.deviceId || prev?.deviceId,
+              label: track?.label || prev?.label,
+              facingMode: (settings?.facingMode as any) || prev?.facingMode,
+              width: settings?.width || prev?.width,
+              height: settings?.height || prev?.height,
+              frameRate: (settings?.frameRate as any) || prev?.frameRate,
+              capWidthMax: (caps?.width && typeof caps.width.max === 'number' ? caps.width.max : prev?.capWidthMax),
+              capHeightMax: (caps?.height && typeof caps.height.max === 'number' ? caps.height.max : prev?.capHeightMax)
+            }));
+          } catch {}
         }
+
+        //（已调整为首启前扫描，不在 ready 后扫描）
       });
     } catch (e: any) {
       if (startSeqRef.current !== seq) return;
       const code: CameraErrorCode | undefined = e?.code;
+      // 若强制 deviceId 打不开（ConstraintFailed/Overconstrained/NotReadable/NotFound/Abort），清空强制并快速回退一次
+      const name = (e?.name || '').toString();
+      if (
+        forcedDeviceId && allowRetryOnForcedFail && (
+          code === CameraErrorCode.ConstraintFailed ||
+          /overconstrain|notreadable|notfound|abort/i.test(name) ||
+          /overconstrain|notreadable|notfound|abort/i.test((e?.message || '').toString())
+        )
+      ) {
+        if (debug) console.warn('[NewCameraCapture] forced device failed, fallback to facingMode');
+        setForcedDeviceId(null);
+        
+        await new Promise(r => setTimeout(r, 250));
+        return startSession(userGesture, false, true);
+      }
       if (code === CameraErrorCode.PermissionDenied) {
         setPermissionDenied(true);
       } else if (code === CameraErrorCode.NotSupported) {
@@ -317,6 +415,7 @@ export const NewCameraCapture: React.FC<NewCameraCaptureProps> = ({
     } finally {
       clearTimeout(watchdog);
       if (mountedRef.current && startSeqRef.current === seq) {
+        startingRef.current = false;
         setStarting(false);
       }
     }
@@ -331,7 +430,8 @@ export const NewCameraCapture: React.FC<NewCameraCaptureProps> = ({
     facingMode,
     debug,
     onError,
-    initialFlashMode
+    initialFlashMode,
+    forcedDeviceId
   ]);
 
   const destroySession = useCallback(() => {
@@ -351,8 +451,12 @@ export const NewCameraCapture: React.FC<NewCameraCaptureProps> = ({
   useEffect(() => {
     mountedRef.current = true;
     if (autoStart) {
-      const timer = setTimeout(() => {
-        startSession(false);
+      const timer = setTimeout(async () => {
+        try {
+          await startSession(false);
+        } catch {
+          await startSession(false);
+        }
       }, 60);
       return () => {
         clearTimeout(timer);
@@ -374,8 +478,15 @@ export const NewCameraCapture: React.FC<NewCameraCaptureProps> = ({
     try {
       const session = sessionRef.current;
       if (!session) return;
+
+      // iOS 兼容：在 stabilizing 阶段若已具备有效尺寸，也允许拍摄
       const state = session.getState();
-      if (state.phase !== 'ready') return;
+      const v = session.getVideoEl();
+      const vw = v?.videoWidth || 0;
+      const vh = v?.videoHeight || 0;
+      const canIOSCapture = isIOS && vw > 0 && vh > 0;
+
+      if (state.phase !== 'ready' && !canIOSCapture) return;
 
       setCapturing(true);
 
@@ -395,7 +506,28 @@ export const NewCameraCapture: React.FC<NewCameraCaptureProps> = ({
 
       let result: CaptureResult;
       try {
-        result = await session.capture();
+        if (state.phase === 'ready') {
+          result = await session.capture();
+        } else {
+          // iOS fallback：直接从 video 抓帧
+          const options: SessionOptions = {
+            orientationPolicy,
+            aspectPolicy,
+            maxWidth,
+            quality,
+            watermark,
+            watermarkBuilder,
+            facingMode,
+            debug
+          };
+          const fileMeta = await processFrame({
+            video: v,
+            options,
+            stableFrames: uiState.stableFrames || 0,
+            rawDimension: { w: vw, h: vh }
+          });
+          result = { file: fileMeta.file, meta: fileMeta.meta };
+        }
       } finally {
         if (burstTorchOn) {
           // 关闭临时 torch
@@ -428,7 +560,7 @@ export const NewCameraCapture: React.FC<NewCameraCaptureProps> = ({
     } finally {
       setCapturing(false);
     }
-  }, [onCapture, onError, continuous, destroySession, capturing, cooldown, flashMode]);
+  }, [onCapture, onError, continuous, destroySession, capturing, cooldown, flashMode, isIOS, orientationPolicy, aspectPolicy, maxWidth, quality, watermark, watermarkBuilder, facingMode, debug, uiState.stableFrames]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -437,6 +569,23 @@ export const NewCameraCapture: React.FC<NewCameraCaptureProps> = ({
 
   const showVideo = uiState.phase === 'stabilizing' || uiState.phase === 'ready';
   const ready = uiState.phase === 'ready';
+  // iOS：在 stabilizing 阶段但已有有效尺寸时也允许拍摄
+  const iosHasDims = (() => {
+    try {
+      const v = sessionRef.current?.getVideoEl();
+      return isIOS && !!v && v.videoWidth > 0 && v.videoHeight > 0;
+    } catch { return false; }
+  })();
+  const canCapture = ready || iosHasDims;
+
+  const infoLine = (() => {
+    if (!currentDeviceInfo) return '';
+    const parts: string[] = [];
+    if (currentDeviceInfo.label) parts.push(currentDeviceInfo.label);
+    if (currentDeviceInfo.width && currentDeviceInfo.height) parts.push(`${currentDeviceInfo.width}x${currentDeviceInfo.height}`);
+    if (typeof currentDeviceInfo.frameRate === 'number') parts.push(`${Math.round(currentDeviceInfo.frameRate)}fps`);
+    return parts.join(' · ');
+  })();
 
   const renderStatus = () => {
     if (permissionDenied) return <span className="text-xs text-red-600">摄像头权限被拒绝</span>;
@@ -460,6 +609,14 @@ export const NewCameraCapture: React.FC<NewCameraCaptureProps> = ({
     }
     return null;
   };
+
+  const shortId = (id?: string) => (id ? id.slice(-6) : 'unknown');
+  const isBackDeviceLabel = (label: string) => {
+    const v = (label || '').toLowerCase();
+    return v.includes('back') || v.includes('rear') || v.includes('environment') || v.includes('后置') || v.includes('背面');
+  };
+
+  // 已移除“最高清后摄”扫描与切换逻辑
 
   const renderFlashButton = () => {
     if (!showVideo) return null;
@@ -545,20 +702,6 @@ export const NewCameraCapture: React.FC<NewCameraCaptureProps> = ({
           </div>
         )}
 
-        {debug && uiState.phase !== 'idle' && (
-          <div className="absolute top-1 left-1 px-1.5 py-0.5 bg-black/50 text-[10px] text-white rounded pointer-events-none leading-[1.1]">
-            <div>phase:{uiState.phase}</div>
-            {uiState.dimension && <div>{uiState.dimension.w}x{uiState.dimension.h}</div>}
-            {uiState.stableFrames !== undefined && <div>stable:{uiState.stableFrames}</div>}
-            {support && (
-              <div>
-                {support.torch ? 'torch' : 'noTorch'} | f:
-                {support.focus.manual ? 'manual' : support.focus.singleShot ? 'single' : 'auto'}
-              </div>
-            )}
-            <div>flash:{flashMode}</div>
-          </div>
-        )}
 
         {showShotFeedback && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/40 pointer-events-none">
@@ -573,13 +716,28 @@ export const NewCameraCapture: React.FC<NewCameraCaptureProps> = ({
             实时预览
           </div>
         )}
+        {continuous && showVideo && (
+          <button
+            type="button"
+            onClick={() => { destroySession(); setNeedUserGesture(true); }}
+            className="absolute top-1 right-1 bg-black/50 hover:bg-black/60 active:bg-black/70 text-white text-[11px] px-2 py-0.5 rounded z-10"
+            aria-label="关闭摄像头"
+          >
+            关闭
+          </button>
+        )}
+      </div>
+
+      {/* 相框下方：当前使用摄像头与分辨率（非调试信息）*/}
+      <div className="mt-1 text-[11px] text-gray-600 min-h-[16px]">
+        {infoLine}
       </div>
 
       <div className="mt-2 flex flex-wrap gap-2 items-center">
         {showVideo && (
           <button
             type="button"
-            disabled={!ready || capturing || cooldown}
+            disabled={!canCapture || capturing || cooldown}
             onClick={handleCapture}
             className={`px-3 py-1.5 rounded text-xs font-medium text-white ${
               ready && !capturing && !cooldown
@@ -618,19 +776,8 @@ export const NewCameraCapture: React.FC<NewCameraCaptureProps> = ({
             />
           </label>
         )}
-        {continuous && showVideo && (
-          <button
-            type="button"
-            onClick={() => {
-              destroySession();
-              setNeedUserGesture(true);
-            }}
-            className="px-2 py-1 rounded text-[11px] font-medium bg-gray-200 hover:bg-gray-300 text-gray-700"
-          >
-            停止
-          </button>
-        )}
-        {renderStatus()}
+        {/* 仅 Android 显示：用户手动一键切到最高清 */}
+        {/* 移除“启动最高清摄像头”按钮 */}
       </div>
     </div>
   );

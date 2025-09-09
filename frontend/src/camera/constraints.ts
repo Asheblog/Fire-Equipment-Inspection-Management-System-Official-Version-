@@ -21,6 +21,7 @@ export interface ConstraintCandidate {
 
 interface BuildParams {
   facingMode: "environment" | "user";
+  deviceId?: string;
   preferResolutions: Array<{ width: number; height: number }>;
   aspectPolicy: AspectPolicy;
 }
@@ -29,17 +30,21 @@ interface BuildParams {
  * 构建候选约束列表（按优先级顺序返回）
  */
 export function buildConstraintCandidates(params: BuildParams): ConstraintCandidate[] {
-  const { facingMode, preferResolutions, aspectPolicy } = params;
+  const { facingMode, deviceId, preferResolutions, aspectPolicy } = params;
 
   const list: ConstraintCandidate[] = [];
   const wantAspect = aspectPolicy.type === "force" ? aspectPolicy.value : null;
 
   for (const r of preferResolutions) {
     const baseVideo: any = {
-      facingMode: facingMode,
       width: { ideal: r.width },
       height: { ideal: r.height }
     };
+    if (deviceId) {
+      baseVideo.deviceId = { exact: deviceId };
+    } else {
+      baseVideo.facingMode = facingMode;
+    }
 
     if (wantAspect) {
       // 尝试包含 aspectRatio
@@ -59,11 +64,20 @@ export function buildConstraintCandidates(params: BuildParams): ConstraintCandid
   }
 
   // 最终 fallback
-  list.push({
-    kind: "fallback",
-    constraint: { video: { facingMode } },
-    desc: "fallback-facingMode-only"
-  });
+  if (deviceId) {
+    // 仅保留 deviceId-only 的兜底。若依然失败，由上层逻辑决定是否回退到 facingMode。
+    list.push({
+      kind: "fallback",
+      constraint: { video: { deviceId: { exact: deviceId } } },
+      desc: "fallback-deviceId-only"
+    });
+  } else {
+    list.push({
+      kind: "fallback",
+      constraint: { video: { facingMode } },
+      desc: "fallback-facingMode-only"
+    });
+  }
 
   return list;
 }
@@ -156,6 +170,7 @@ export function prepareCandidatesFromOptions(opts: SessionOptions): ConstraintCa
 
   return buildConstraintCandidates({
     facingMode: facing,
+    deviceId: opts.deviceId,
     preferResolutions: prefer,
     aspectPolicy: opts.aspectPolicy || { type: "native" }
   });
