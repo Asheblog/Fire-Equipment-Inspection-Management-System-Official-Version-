@@ -66,6 +66,8 @@ export function InspectionRecordsPage() {
   // 详情对话框
   const [selectedInspection, setSelectedInspection] = useState<InspectionDetail | null>(null)
   const [detailDialogOpen, setDetailDialogOpen] = useState(false)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const detailAbortRef = useRef<AbortController | null>(null)
 
   // 日期选择器状态
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
@@ -164,8 +166,21 @@ export function InspectionRecordsPage() {
 
   // 查看点检详情
   const viewInspectionDetail = async (inspectionId: number) => {
+    // 取消之前的详情请求
+    if (detailAbortRef.current) {
+      detailAbortRef.current.abort()
+    }
+    const controller = new AbortController()
+    detailAbortRef.current = controller
+
+    // 先打开弹窗并展示加载态
+    setDetailDialogOpen(true)
+    setDetailLoading(true)
+    setSelectedInspection(null)
+
     try {
-      const response = await inspectionApi.getById(inspectionId)
+      const response = await inspectionApi.getById(inspectionId, { signal: controller.signal })
+      if (controller.signal.aborted) return
       if (response.success && response.data) {
         const checklistResults = response.data.checklistResults ? 
           JSON.parse(response.data.checklistResults) : []
@@ -175,10 +190,12 @@ export function InspectionRecordsPage() {
           checklistResults,
           inspectionImagesList: normalizedImages
         })
-        setDetailDialogOpen(true)
       }
-    } catch (error) {
+    } catch (error: any) {
+      if (error?.name === 'CanceledError' || error?.name === 'AbortError') return
       log.error('获取点检详情失败', error)
+    } finally {
+      if (!controller.signal.aborted) setDetailLoading(false)
     }
   }
 
@@ -513,12 +530,30 @@ export function InspectionRecordsPage() {
       </Card>
 
       {/* 点检详情对话框 */}
-      <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
+      <Dialog 
+        open={detailDialogOpen} 
+        onOpenChange={(open) => {
+          setDetailDialogOpen(open)
+          if (!open) {
+            if (detailAbortRef.current) {
+              detailAbortRef.current.abort()
+              detailAbortRef.current = null
+            }
+            setDetailLoading(false)
+            setSelectedInspection(null)
+          }
+        }}
+      >
         <DialogContent className="max-w-6xl w-[96vw] overflow-x-hidden">
           <DialogHeader>
             <DialogTitle>点检记录详情</DialogTitle>
           </DialogHeader>
           
+          {/* 加载中占位 */}
+          {detailLoading && !selectedInspection && (
+            <div className="py-12 text-center text-muted-foreground">加载详情中...</div>
+          )}
+
           {selectedInspection && (
             <div className="space-y-6">
               {/* 器材信息卡片 */}

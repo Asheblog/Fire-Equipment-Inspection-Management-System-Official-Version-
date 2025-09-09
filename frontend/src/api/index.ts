@@ -178,9 +178,9 @@ export const inspectionApi = {
   }): Promise<PaginatedResponse<InspectionLog>> =>
     api.get('/inspections', { params }),
     
-  // 根据ID获取点检详情
-  getById: (id: number): Promise<ApiResponse<InspectionLog>> =>
-    api.get(`/inspections/${id}`),
+  // 根据ID获取点检详情（支持可选的Axios配置，如 signal 取消）
+  getById: (id: number, config?: any): Promise<ApiResponse<InspectionLog>> =>
+    api.get(`/inspections/${id}`, config),
     
   // 创建点检记录
   create: (data: {

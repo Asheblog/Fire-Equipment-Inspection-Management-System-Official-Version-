@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createLogger } from '@/lib/logger'
 import { formatQrCodeDisplay } from '@/utils/qrCode'
 import { format } from 'date-fns'
@@ -36,6 +36,8 @@ export function MobileInspectionRecordsPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [selectedInspection, setSelectedInspection] = useState<InspectionDetail | null>(null)
   const [detailDialogOpen, setDetailDialogOpen] = useState(false)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const detailAbortRef = useRef<AbortController | null>(null)
 
   // 加载点检记录
   const loadInspections = async () => {
@@ -62,16 +64,32 @@ export function MobileInspectionRecordsPage() {
 
   // 查看点检详情
   const viewInspectionDetail = async (inspectionId: number) => {
+    // 若存在未完成的请求，先取消
+    if (detailAbortRef.current) {
+      detailAbortRef.current.abort()
+    }
+    const controller = new AbortController()
+    detailAbortRef.current = controller
+
+    // 立即打开弹窗并显示加载态，提升响应性
+    setDetailDialogOpen(true)
+    setDetailLoading(true)
+    setSelectedInspection(null)
+
     try {
-      const response = await inspectionApi.getById(inspectionId)
+      const response = await inspectionApi.getById(inspectionId, { signal: controller.signal })
+      // 若已取消，不再处理
+      if (controller.signal.aborted) return
       if (response.success && response.data) {
         const checklistResults = response.data.checklistResults ? JSON.parse(response.data.checklistResults) : []
         const normalizedImages = (response.data as any).inspectionImages || parseInspectionImages(response.data)
         setSelectedInspection({ ...response.data, checklistResults, inspectionImagesList: normalizedImages })
-        setDetailDialogOpen(true)
       }
-    } catch (error) {
+    } catch (error: any) {
+      if (error?.name === 'CanceledError' || error?.name === 'AbortError') return
       log.error('获取点检详情失败', error)
+    } finally {
+      if (!controller.signal.aborted) setDetailLoading(false)
     }
   }
 
@@ -205,13 +223,31 @@ export function MobileInspectionRecordsPage() {
       </div>
 
       {/* 点检详情对话框 */}
-      <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
+      <Dialog 
+        open={detailDialogOpen} 
+        onOpenChange={(open) => {
+          setDetailDialogOpen(open)
+          if (!open) {
+            // 关闭时取消请求并重置状态
+            if (detailAbortRef.current) {
+              detailAbortRef.current.abort()
+              detailAbortRef.current = null
+            }
+            setDetailLoading(false)
+            setSelectedInspection(null)
+          }
+        }}
+      >
         {/* 移动端详情弹窗：放宽宽度限制、减少左右留白，避免内容横向溢出 */}
         <DialogContent className="w-[96vw] max-w-none sm:max-w-lg p-4 sm:p-6 overflow-x-hidden">
           <DialogHeader>
             <DialogTitle>点检记录详情</DialogTitle>
           </DialogHeader>
-          
+          {/* 加载中占位 */}
+          {detailLoading && !selectedInspection && (
+            <div className="py-10 text-center text-gray-500">加载详情中...</div>
+          )}
+
           {selectedInspection && (
             <div className="space-y-4">
               {/* 器材信息卡片 - 移动端优化 */}
