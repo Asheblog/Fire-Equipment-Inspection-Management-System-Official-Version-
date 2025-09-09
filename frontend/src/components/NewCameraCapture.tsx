@@ -66,9 +66,7 @@ const deviceManagerSingleton = createCameraDeviceManager();
 const isIOS =
   /iP(hone|ad|od)/.test(navigator.userAgent) ||
   (navigator.platform === 'MacIntel' && (navigator as any).maxTouchPoints > 1);
-const isAndroid = /Android/i.test(navigator.userAgent);
 // 暂时关闭调试叠层渲染（即使外部传入 debug 也不显示）
-const SHOW_DEBUG_OVERLAY = false;
 
 export const NewCameraCapture: React.FC<NewCameraCaptureProps> = ({
   onCapture,
@@ -120,7 +118,6 @@ export const NewCameraCapture: React.FC<NewCameraCaptureProps> = ({
 
   const [focusPoint, setFocusPoint] = useState<{ x: number; y: number } | null>(null);
   const focusHideTimerRef = useRef<number | null>(null);
-  const autoBestTriedRef = useRef(false);
   // 移除最高清自动初始化逻辑
 
   // 调试：当前 track/设备信息 & 所有摄像头列表
@@ -134,8 +131,7 @@ export const NewCameraCapture: React.FC<NewCameraCaptureProps> = ({
     capWidthMax?: number;
     capHeightMax?: number;
   } | null>(null);
-  const [allCameras, setAllCameras] = useState<Array<{ deviceId: string; label: string }>>([]);
-  const [cameraCaps, setCameraCaps] = useState<Record<string, { maxW?: number; maxH?: number; note?: string }>>({});
+  const [, setAllCameras] = useState<Array<{ deviceId: string; label: string }>>([]);
   const [forcedDeviceId, setForcedDeviceId] = useState<string | null>(null);
 
   // 组件卸载清理
@@ -587,34 +583,7 @@ export const NewCameraCapture: React.FC<NewCameraCaptureProps> = ({
     return parts.join(' · ');
   })();
 
-  const renderStatus = () => {
-    if (permissionDenied) return <span className="text-xs text-red-600">摄像头权限被拒绝</span>;
-    if (notSupported) return <span className="text-xs text-red-600">设备/浏览器不支持</span>;
-    if (needUserGesture) return <span className="text-xs text-gray-600">需要点击“开启摄像头”授权</span>;
-    if (uiState.phase === 'requesting' || starting) return <span className="text-xs text-gray-600">请求权限/启动流...</span>;
-    if (uiState.phase === 'stabilizing') return <span className="text-xs text-amber-600">稳定中({uiState.stableFrames})...</span>;
-    if (uiState.phase === 'ready') {
-      return (
-        <span className="text-xs text-green-600">
-          就绪{uiState.dimension ? ` ${uiState.dimension.w}x${uiState.dimension.h}` : ''}{uiState.stableFrames !== undefined ? ` • 稳定帧${uiState.stableFrames}` : ''}
-        </span>
-      );
-    }
-    if (uiState.phase === 'error') {
-      return (
-        <span className="text-xs text-red-600">
-          错误: {uiState.errorCode} {uiState.errorMessage}
-        </span>
-      );
-    }
-    return null;
-  };
-
-  const shortId = (id?: string) => (id ? id.slice(-6) : 'unknown');
-  const isBackDeviceLabel = (label: string) => {
-    const v = (label || '').toLowerCase();
-    return v.includes('back') || v.includes('rear') || v.includes('environment') || v.includes('后置') || v.includes('背面');
-  };
+  // 已移除未使用的状态/工具函数（renderStatus/shortId/isBackDeviceLabel）
 
   // 已移除“最高清后摄”扫描与切换逻辑
 
