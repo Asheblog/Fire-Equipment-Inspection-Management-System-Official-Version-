@@ -144,23 +144,52 @@ export const api = {
     return filePath.startsWith('/') ? filePath : `/${filePath}`
   },
   getFile: (filePath: string): Promise<Blob> => {
-    // 若是绝对URL，直接用裸 axios（避免拼接 baseURL）
-    if (filePath.startsWith('http')) {
-      const { token } = useAuthStore.getState()
-      return axios.get(filePath, {
-        responseType: 'blob',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        // 下载图片默认给 60s，弱网下更稳健
-        timeout: 60000
-      }).then(r => r.data)
+    // 使用 fetch 获取 Blob，避免 XHR 被第三方 inspector 读取 responseText 导致报错
+    const { token } = useAuthStore.getState()
+    const url = filePath
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 60000)
+    const headers: Record<string, string> = {}
+    if (token) headers['Authorization'] = `Bearer ${token}`
+    const doFetch = (tok?: string) => {
+      const h: Record<string, string> = { ...headers }
+      if (tok) h['Authorization'] = `Bearer ${tok}`
+      return fetch(url, {
+        method: 'GET',
+        headers: h,
+        // 保持与同源请求行为一致；绝对 URL 亦可正常工作
+        credentials: 'same-origin',
+        signal: controller.signal
+      })
     }
-    // 否则走统一拦截器，并将 baseURL 置空，避免 '/api' 前缀导致 '/api/uploads' 404
-    return apiClient.get(filePath, {
-      responseType: 'blob',
-      baseURL: '',
-      // 下载图片默认给 60s，弱网下更稳健
-      timeout: 60000
-    }).then((r: any) => r.data)
+
+    const { refreshToken, setToken, logout } = useAuthStore.getState() as any
+    return doFetch(token ?? undefined)
+      .then(async (res) => {
+        if (res.status === 401 && refreshToken) {
+          // 使用统一的刷新逻辑获取新 token 后重试一次
+          try {
+            const newTok = await performRefresh(refreshToken, setToken, logout)
+            const retry = await doFetch(newTok)
+            clearTimeout(timeout)
+            if (!retry.ok) throw new Error(`Failed to fetch file after refresh: ${retry.status} ${retry.statusText}`)
+            return retry.blob()
+          } catch (e) {
+            clearTimeout(timeout)
+            throw e
+          }
+        }
+        clearTimeout(timeout)
+        if (!res.ok) throw new Error(`Failed to fetch file: ${res.status} ${res.statusText}`)
+        return res.blob()
+      })
+      .catch(err => {
+        // 区分超时/主动取消
+        if ((err as any).name === 'AbortError') {
+          throw new Error('Failed to fetch file: timeout')
+        }
+        throw err
+      })
   }
 }
 

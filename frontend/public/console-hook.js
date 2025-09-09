@@ -11,6 +11,18 @@
     var tokenMeta = document.querySelector('meta[name="client-log-token"]');
     var LOG_TOKEN = tokenMeta ? tokenMeta.getAttribute('content') : '';
 
+    // 屏蔽某些第三方 inspector 在 XHR blob 上误读 responseText 的噪音错误
+    try {
+      window.addEventListener('error', function(ev){
+        var msg = ev && ev.message ? String(ev.message) : '';
+        if (msg && msg.indexOf("Failed to read the 'responseText' property from 'XMLHttpRequest'") >= 0) {
+          // 阻止该已知无害错误的默认报错，避免污染控制台
+          ev.preventDefault && ev.preventDefault();
+          return false;
+        }
+      }, true);
+    } catch(_){}
+
     var original = window.console;
     var queue = [];
     var MAX_QUEUE = 30;

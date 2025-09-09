@@ -11,6 +11,7 @@ import { MultiImageUploader } from '@/components/ui/MultiImageUploader'
 import { ImageGrid } from '@/components/ui/ImageGrid'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
@@ -34,6 +35,7 @@ import {
 import type { Issue } from '@/types'
 import type { User as SysUser, Factory } from '@/types'
 import { IssueFilterPanel } from '@/components/issue/IssueFilterPanel'
+import { IssueListTable } from '@/components/issue/IssueListTable'
 import { IssueAnalysisDialog } from '@/components/issue/IssueAnalysisDialog'
 
 interface IssueCardProps {
@@ -189,7 +191,8 @@ export const IssuePage: React.FC = () => {
     resetForms
   } = useIssueStore()
   
-  const [activeTab, setActiveTab] = useState('pending')
+  const [activeTab, setActiveTab] = useState('all')
+  const [viewMode, setViewMode] = useState<'table' | 'card'>('table')
   // 本页筛选与分析状态
   const [searchQuery, setSearchQuery] = useState('')
   // 已精简：移除严重程度与是否有图筛选
@@ -210,16 +213,19 @@ export const IssuePage: React.FC = () => {
   const [trendView, setTrendView] = useState<'stack'|'new'|'closed'>('stack')
   const [analysisOpen, setAnalysisOpen] = useState(false)
   const [analysisLoading, setAnalysisLoading] = useState(false)
+  // 头部标签计数（与当前列表无关，受筛选条件影响）
+  const [headerCounts, setHeaderCounts] = useState<{ pending: number; pendingAudit: number; closed: number }>({ pending: 0, pendingAudit: 0, closed: 0 })
+  
 
   // 加载隐患列表
-  const buildParams = useCallback((page: number) => {
+  const buildParams = useCallback((page: number, tabOverride?: string) => {
     const params: any = {
       page,
       limit: pagination.pageSize,
       sortBy,
       sortOrder
     }
-    const mapped = mapTabToStatus(activeTab)
+    const mapped = mapTabToStatus(tabOverride ?? activeTab)
     if (mapped) params.status = mapped
     if (searchQuery) params.search = searchQuery
     if (typeof overdue === 'number' && overdue > 0) params.overdue = overdue
@@ -231,10 +237,10 @@ export const IssuePage: React.FC = () => {
     return params
   }, [activeTab, pagination.pageSize, sortBy, sortOrder, searchQuery, overdue, factoryIds, reporterId, handlerId, dateRange?.from, dateRange?.to])
 
-  const loadIssues = async (page = 1) => {
+  const loadIssues = async (page = 1, tabOverride?: string) => {
     try {
       setLoading(true)
-      const response = await issueApi.getList(buildParams(page))
+      const response = await issueApi.getList(buildParams(page, tabOverride))
       log.debug('加载隐患列表 响应', { ok: response.success, count: response.data?.items?.length })
       const { data } = response
       if (data && Array.isArray(data.items)) {
@@ -272,7 +278,8 @@ export const IssuePage: React.FC = () => {
   // 标签页切换
   const handleTabChange = (value: string) => {
     setActiveTab(value)
-    loadIssues(1)
+    loadIssues(1, value)
+    refreshHeaderCounts()
   }
 
   // 处理隐患
@@ -293,7 +300,8 @@ export const IssuePage: React.FC = () => {
       closeAllDialogs()
       resetForms()
       // 使用映射函数，修复原 toUpperCase 导致 'audit' -> 'AUDIT' 刷新失败
-      loadIssues(pagination.page)
+      loadIssues(pagination.page, activeTab)
+      refreshHeaderCounts()
     } catch (error: any) {
       log.error('处理隐患失败', error)
       if (isValidationError(error)) {
@@ -319,7 +327,8 @@ export const IssuePage: React.FC = () => {
       closeAllDialogs()
       resetForms()
       // 刷新当前列表
-      loadIssues(pagination.page)
+      loadIssues(pagination.page, activeTab)
+      refreshHeaderCounts()
     } catch (error: any) {
       log.error('审核隐患失败', error)
       if (isValidationError(error)) {
@@ -356,7 +365,8 @@ export const IssuePage: React.FC = () => {
 
   // 首次加载只加载列表，分析数据在首次打开弹窗时再加载
   useEffect(() => {
-    loadIssues(1)
+    loadIssues(1, activeTab)
+    refreshHeaderCounts()
   }, [])
 
   const loadStatsAndTrend = async () => {
@@ -379,9 +389,31 @@ export const IssuePage: React.FC = () => {
     }
   }
 
+  // 刷新头部标签计数（不携带 status，按当前筛选条件统计）
+  const refreshHeaderCounts = useCallback(async () => {
+    try {
+      const base = buildParams(1, 'all') as any
+      delete base.page
+      delete base.limit
+      delete base.status
+      const res: any = await issueApi.getStats(base)
+      if (res?.success && res.data) {
+        const by = res.data.byStatus || {}
+        setHeaderCounts({
+          pending: Number(by.pending || 0),
+          pendingAudit: Number(by.pendingAudit || 0),
+          closed: Number(by.closed || 0)
+        })
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, [buildParams])
+
   const applyFilters = () => {
     setPagination({ ...pagination, page: 1 })
-    loadIssues(1)
+    loadIssues(1, activeTab)
+    refreshHeaderCounts()
     if (analysisOpen || stats) {
       loadStatsAndTrend()
     }
@@ -417,18 +449,9 @@ export const IssuePage: React.FC = () => {
     setSortOrder('desc')
   }
 
-  const getTabCounts = () => {
-    // 确保 issues 是数组
-    const issueList = Array.isArray(issues) ? issues : []
-    
-    const pendingCount = issueList.filter(i => i.status === 'PENDING').length
-    const auditCount = issueList.filter(i => i.status === 'PENDING_AUDIT').length
-    const closedCount = issueList.filter(i => i.status === 'CLOSED').length
-    
-    return { pendingCount, auditCount, closedCount }
-  }
-
-  const { pendingCount, auditCount, closedCount } = getTabCounts()
+  const pendingCount = headerCounts.pending
+  const auditCount = headerCounts.pendingAudit
+  const closedCount = headerCounts.closed
 
   return (
     <PageContainer>
@@ -438,6 +461,24 @@ export const IssuePage: React.FC = () => {
       />
 
       <ContentSection>
+        {/* 视图切换 */}
+        <div className="flex items-center justify-end mb-2 gap-2">
+          <Button
+            size="sm"
+            variant={viewMode === 'table' ? 'default' : 'outline'}
+            onClick={() => setViewMode('table')}
+          >
+            表格视图
+          </Button>
+          <Button
+            size="sm"
+            variant={viewMode === 'card' ? 'default' : 'outline'}
+            onClick={() => setViewMode('card')}
+          >
+            卡片视图
+          </Button>
+        </div>
+
         <IssueFilterPanel
           userRole={user?.role}
           searchQuery={searchQuery}
@@ -514,10 +555,56 @@ export const IssuePage: React.FC = () => {
             <div className="flex items-center justify-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
             </div>
-          ) : Array.isArray(issues) && issues.length > 0 ? (
+          ) : viewMode === 'table' ? (
+            <>
+              <IssueListTable
+                issues={Array.isArray(issues) ? issues : []}
+                userRole={user?.role}
+                onView={(issue) => openViewDialog(issue)}
+                onHandle={(issue) => openHandleDialog(issue)}
+                onAudit={(issue) => openAuditDialog(issue)}
+              />
+
+              <div className="mt-4 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">每页</span>
+                  <Select value={String(pagination.pageSize)} onValueChange={(v) => { const size = parseInt(v); setPagination({ ...pagination, page: 1, pageSize: size }); loadIssues(1) }}>
+                    <SelectTrigger className="h-9 w-[88px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="10">10</SelectItem>
+                      <SelectItem value="20">20</SelectItem>
+                      <SelectItem value="50">50</SelectItem>
+                      <SelectItem value="100">100</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {pagination.totalPages > 1 && (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      disabled={pagination.page <= 1}
+                      onClick={() => loadIssues(pagination.page - 1)}
+                    >
+                      上一页
+                    </Button>
+                    <span className="px-4 py-2 text-sm">
+                      第 {pagination.page} 页 / 共 {pagination.totalPages} 页
+                    </span>
+                    <Button
+                      variant="outline"
+                      disabled={pagination.page >= pagination.totalPages}
+                      onClick={() => loadIssues(pagination.page + 1)}
+                    >
+                      下一页
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
             <>
               <div className="grid gap-4">
-                {issues.map((issue) => (
+                {(Array.isArray(issues) ? issues : []).map((issue) => (
                   <IssueCard
                     key={issue.id}
                     issue={issue}
@@ -528,33 +615,43 @@ export const IssuePage: React.FC = () => {
                   />
                 ))}
               </div>
-              
-              {pagination.totalPages > 1 && (
-                <div className="flex justify-center gap-2 mt-6">
-                  <Button
-                    variant="outline"
-                    disabled={pagination.page <= 1}
-                    onClick={() => loadIssues(pagination.page - 1)}
-                  >
-                    上一页
-                  </Button>
-                  <span className="px-4 py-2 text-sm">
-                    第 {pagination.page} 页 / 共 {pagination.totalPages} 页
-                  </span>
-                  <Button
-                    variant="outline"
-                    disabled={pagination.page >= pagination.totalPages}
-                    onClick={() => loadIssues(pagination.page + 1)}
-                  >
-                    下一页
-                  </Button>
+
+              <div className="mt-6 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">每页</span>
+                  <Select value={String(pagination.pageSize)} onValueChange={(v) => { const size = parseInt(v); setPagination({ ...pagination, page: 1, pageSize: size }); loadIssues(1) }}>
+                    <SelectTrigger className="h-9 w-[88px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="10">10</SelectItem>
+                      <SelectItem value="20">20</SelectItem>
+                      <SelectItem value="50">50</SelectItem>
+                      <SelectItem value="100">100</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-              )}
+                {pagination.totalPages > 1 && (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      disabled={pagination.page <= 1}
+                      onClick={() => loadIssues(pagination.page - 1)}
+                    >
+                      上一页
+                    </Button>
+                    <span className="px-4 py-2 text-sm">
+                      第 {pagination.page} 页 / 共 {pagination.totalPages} 页
+                    </span>
+                    <Button
+                      variant="outline"
+                      disabled={pagination.page >= pagination.totalPages}
+                      onClick={() => loadIssues(pagination.page + 1)}
+                    >
+                      下一页
+                    </Button>
+                  </div>
+                )}
+              </div>
             </>
-          ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              暂无隐患记录
-            </div>
           )}
         </TabsContent>
         </Tabs>
