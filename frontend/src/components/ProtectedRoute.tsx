@@ -2,6 +2,7 @@ import React from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '@/stores/auth'
 import type { UserRole } from '@/types'
+import { isMobileDevice } from '@/lib/utils'
 
 interface ProtectedRouteProps {
   children: React.ReactNode
@@ -64,11 +65,13 @@ export const PublicRoute: React.FC<PublicRouteProps> = ({
   children,
   redirectTo = '/dashboard'
 }) => {
-  const { isAuthenticated } = useAuthStore()
+  const { isAuthenticated, user } = useAuthStore()
 
   // 已登录用户重定向到指定页面
   if (isAuthenticated) {
-    return <Navigate to={redirectTo} replace />
+    // 若为移动端或点检员，优先进入移动端首页
+    const to = (isMobileDevice() || user?.role === 'INSPECTOR') ? '/m/dashboard' : redirectTo
+    return <Navigate to={to} replace />
   }
 
   return <>{children}</>

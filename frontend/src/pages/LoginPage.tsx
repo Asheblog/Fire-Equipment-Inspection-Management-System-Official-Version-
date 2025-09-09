@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { authApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { Loader2, Shield } from 'lucide-react'
+import { isMobileDevice } from '@/lib/utils'
 
 export const LoginPage: React.FC = () => {
   const log = createLogger('Login')
@@ -23,8 +24,8 @@ export const LoginPage: React.FC = () => {
     saveUsername: !!localStorage.getItem('saved-username') || true
   })
 
-  // 获取重定向目标
-  const from = location.state?.from?.pathname || '/dashboard'
+  // 计算默认重定向目标（移动端优先进入移动首页）
+  const computeDefaultRedirect = () => (isMobileDevice() ? '/m/dashboard' : '/dashboard')
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target
@@ -111,10 +112,18 @@ export const LoginPage: React.FC = () => {
           localStorage.removeItem('saved-username')
         }
         
-        // 等待一下，确保状态更新完成
+        // 选择跳转目标：优先使用来源路由；否则按设备/角色选择
+        const sourcePath = location.state?.from?.pathname as string | undefined
+        const targetPath = sourcePath
+          ? sourcePath
+          : (isMobileDevice() || user?.role === 'INSPECTOR')
+            ? '/m/dashboard'
+            : computeDefaultRedirect()
+
+        // 等待一下，确保状态更新完成再跳转
         setTimeout(() => {
-          log.debug('跳转目标', { from })
-          navigate(from, { replace: true })
+          log.debug('跳转目标', { targetPath, from: sourcePath })
+          navigate(targetPath, { replace: true })
         }, 100)
       } else {
         setError(response.message || '登录失败')
