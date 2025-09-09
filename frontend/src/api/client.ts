@@ -126,7 +126,18 @@ export const api = {
   delete: <T = any>(url: string, config?: AxiosRequestConfig): Promise<T> =>
     apiClient.delete(url, config).then(r => r.data),
   upload: <T = any>(url: string, formData: FormData, config?: AxiosRequestConfig): Promise<T> =>
-    apiClient.post(url, formData, { ...config, headers: { ...config?.headers, 'Content-Type': 'multipart/form-data' } }).then(r => r.data),
+    apiClient.post(
+      url,
+      formData,
+      {
+        ...config,
+        // 为上传设置更长超时（默认60s，除非显式传入更长）
+        timeout: (config && typeof config.timeout === 'number' && config.timeout > 0)
+          ? config.timeout
+          : 60000,
+        headers: { ...config?.headers, 'Content-Type': 'multipart/form-data' }
+      }
+    ).then(r => r.data),
   getFileUrl: (filePath: string): string => {
     if (!filePath) return ''
     if (filePath.startsWith('http')) return filePath
@@ -136,10 +147,20 @@ export const api = {
     // 若是绝对URL，直接用裸 axios（避免拼接 baseURL）
     if (filePath.startsWith('http')) {
       const { token } = useAuthStore.getState()
-      return axios.get(filePath, { responseType: 'blob', headers: token ? { Authorization: `Bearer ${token}` } : {}, timeout: 10000 }).then(r => r.data)
+      return axios.get(filePath, {
+        responseType: 'blob',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        // 下载图片默认给 60s，弱网下更稳健
+        timeout: 60000
+      }).then(r => r.data)
     }
     // 否则走统一拦截器，并将 baseURL 置空，避免 '/api' 前缀导致 '/api/uploads' 404
-    return apiClient.get(filePath, { responseType: 'blob', baseURL: '' }).then((r: any) => r.data)
+    return apiClient.get(filePath, {
+      responseType: 'blob',
+      baseURL: '',
+      // 下载图片默认给 60s，弱网下更稳健
+      timeout: 60000
+    }).then((r: any) => r.data)
   }
 }
 

@@ -64,17 +64,38 @@ export const MultiCameraCapture: React.FC<MultiCameraCaptureProps> = ({
       if (!fileUrl) {
         throw new Error('上传结果缺少 fileUrl');
       }
-      // 授权获取真实文件(避免<img> 401)，转成blob预览
+      // 尝试获取远程blob预览，但即使失败也不清理本地预览，避免出现空白
       let preview: string | undefined = undefined;
       try {
         const mod = await import('@/api/client');
         const blob = await mod.api.getFile(fileUrl);
         preview = URL.createObjectURL(blob);
       } catch {}
-      setItems(prev => prev.map(it => it.id === id ? { ...it, url: fileUrl, uploading: false, preview, tempLocal: undefined } : it));
-      const futureList = items.concat([{ id, url: fileUrl, uploading: false, preview }]);
-      updateParent(futureList);
-      URL.revokeObjectURL(tempLocal);
+
+      setItems(prev => {
+        const next = prev.map(it => {
+          if (it.id !== id) return it;
+          const updated: Item = { ...it, url: fileUrl, uploading: false } as Item;
+          if (preview) {
+            // 远程预览已就绪，替换本地预览并回收临时URL
+            if (updated.tempLocal) {
+              try { URL.revokeObjectURL(updated.tempLocal); } catch {}
+            }
+            updated.preview = preview;
+            updated.tempLocal = undefined;
+          } else {
+            // 远程预览未就绪，继续保留本地预览，待后续效果加载
+          }
+          return updated;
+        });
+        // 同步父层受控值（使用最新next，避免闭包旧值丢图）
+        updateParent(next);
+        return next;
+      });
+      // 只有当我们确实放弃了本地预览时才回收；否则继续用于展示
+      if (preview) {
+        try { URL.revokeObjectURL(tempLocal); } catch {}
+      }
     } catch (e: any) {
       setItems(prev => prev.map(it => it.id === id ? { ...it, uploading: false, error: e.message || '上传失败' } : it));
     }
@@ -115,7 +136,14 @@ export const MultiCameraCapture: React.FC<MultiCameraCaptureProps> = ({
           try {
             const blob = await mod.api.getFile(it.url);
             const obj = URL.createObjectURL(blob);
-            setItems(prev => prev.map(p => p.id === it.id ? { ...p, preview: obj } : p));
+            setItems(prev => prev.map(p => {
+              if (p.id !== it.id) return p;
+              // 远程预览准备就绪，若存在本地预览则回收
+              if (p.tempLocal) {
+                try { URL.revokeObjectURL(p.tempLocal); } catch {}
+              }
+              return { ...p, preview: obj, tempLocal: undefined };
+            }));
           } catch {}
         }
       }
