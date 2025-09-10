@@ -405,7 +405,7 @@ const Overlay: React.FC<{
     <div
       ref={containerRef}
       className="fixed inset-0 z-[9999] bg-black/90 select-none touch-none overscroll-contain "
-      style="pointer-events: auto;"
+      style={{ pointerEvents: 'auto' }}
       onWheel={onWheel}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
