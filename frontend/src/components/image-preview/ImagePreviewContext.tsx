@@ -396,7 +396,7 @@ const Overlay: React.FC<{
   )
 
   const indicator = (
-    <div className="absolute top-3 left-1/2 -translate-x-1/2 text-white text-sm bg-black/30 px-2 py-1 rounded z-50" onClick={(e) => e.stopPropagation()}>
+    <div className="absolute top-3 left-3 text-white text-sm bg-black/30 px-2 py-1 rounded z-50" onClick={(e) => e.stopPropagation()}>
       {index + 1} / {items.length}
     </div>
   )
@@ -404,7 +404,8 @@ const Overlay: React.FC<{
   return createPortal(
     <div
       ref={containerRef}
-      className="fixed inset-0 z-[9999] bg-black/90 select-none touch-none overscroll-contain"
+      className="fixed inset-0 z-[9999] bg-black/90 select-none touch-none overscroll-contain "
+      style="pointer-events: auto;"
       onWheel={onWheel}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
