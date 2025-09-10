@@ -1,6 +1,36 @@
 # 更新日志
 > 注：历史记录中提及的 deploy-simple.js / secure-deploy.js 已统一为 deploy.js（现行脚本名）。
 
+## [未发布] - 2025-09-10（系统设置：数据管理）
+
+### ✨ 新增
+- 后端新增“数据清理服务”与计划任务：`backend/src/services/data-cleanup.service.js`
+  - 支持可选清理类别：点检记录（inspectionLogs）、审计日志（auditLogs）、安全日志（securityLogs）、错误日志（errorLogs）。
+  - 读取运行时配置执行清理（默认关闭），每日 03:30 自动执行一次；也支持手动执行。
+  - 清理阈值由“数据保留天数”决定，低于 30 天或高于 3650 天的值将被夹取。
+  - 写回最近一次清理时间（`last_cleanup_at`）。
+
+### 🔧 接口
+- GET `/api/system-settings`：返回新增字段
+  - `autoCleanupEnabled: boolean`
+  - `dataRetentionDays: number`
+  - `cleanupCategories: string[]`
+  - `lastCleanupAt: string | ''`
+- PUT `/api/system-settings/cleanup`：更新清理相关设置（默认关闭）。
+- POST `/api/system-settings/cleanup/execute`：一键手动清理，返回各类别清理条数及总计。
+
+### 🖥️ 前端（系统设置）
+- 页面：`frontend/src/pages/SystemSettingsPage.tsx`
+  - “数据管理”卡片新增“清理内容”多选（点检记录/审计日志/安全日志/错误日志）。
+  - “自动清理”“数据保留天数”与后端联动保存；显示“上次清理”时间。
+  - “一键清理”（数据管理卡片）与“执行清理”（系统维护卡片）均可手动触发清理并显示结果。
+  - 输入值校验：数据保留天数仅在 NaN 时回退；并在 30~3650 范围内夹取。
+
+### 🧩 兼容
+- 保持原有二维码基础 URL 设置接口不变（`/api/system-settings/qr-base-url`）。
+- 系统设置拉取接口向后兼容：旧前端仅使用 `qrBaseUrl` 不受影响。
+
+
 ## 2025-09-10（点检记录删除 + 权限码管控）
 
 ### ✨ 新功能 / 变更摘要

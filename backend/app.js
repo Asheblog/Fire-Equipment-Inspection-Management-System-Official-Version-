@@ -192,6 +192,14 @@ if (process.env.NODE_ENV === 'production') {
   }, cleanupInterval);
 }
 
+// 数据清理计划任务（读取系统设置，默认关闭；每日3:30执行）
+try {
+  const DataCleanupService = require('./src/services/data-cleanup.service');
+  DataCleanupService.startScheduler();
+} catch (e) {
+  console.warn('[DataCleanup] Scheduler init failed:', e.message);
+}
+
 // ===== 服务器启动 =====
 
 // 优雅关闭处理

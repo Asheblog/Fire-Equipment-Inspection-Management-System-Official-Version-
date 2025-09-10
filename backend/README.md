@@ -237,6 +237,18 @@ GET /api/reports/recent-activity     # 最近活动
 - ✅ **图片处理**: 点检图片、隐患图片、处理后图片
 - ✅ **存储管理**: 分类存储、自动清理旧文件
 
+### 8. 系统设置：数据管理（清理与保留）
+- 运行时配置：存储在 `system_settings` 表
+  - `auto_cleanup_enabled`: 是否启用自动清理（默认 false）
+  - `data_retention_days`: 数据保留天数（30~3650，默认 365）
+  - `cleanup_categories`: JSON 数组，可选 `inspectionLogs`/`auditLogs`/`securityLogs`/`errorLogs`
+  - `last_cleanup_at`: 最近一次清理时间（ISO 字符串）
+- API：
+  - GET `/api/system-settings`：返回上述字段（兼容原 `qrBaseUrl` 字段）
+  - PUT `/api/system-settings/cleanup`：更新清理相关设置
+  - POST `/api/system-settings/cleanup/execute`：手动触发清理，返回各类别清理条数与总计
+- 自动任务：默认关闭；启用后每日 03:30 执行一次（`src/services/data-cleanup.service.js`）
+
 ## 🔐 安全特性
 
 ### 认证和授权

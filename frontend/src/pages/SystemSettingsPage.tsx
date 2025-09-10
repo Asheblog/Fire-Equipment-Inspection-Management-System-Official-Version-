@@ -23,6 +23,8 @@ interface SystemSettings {
   systemVersion: string
   dataRetentionDays: number
   autoCleanupEnabled: boolean
+  cleanupCategories: string[]
+  lastCleanupAt?: string
   sessionTimeoutMinutes: number
   passwordExpiryDays: number
   maxLoginAttempts: number
@@ -39,6 +41,8 @@ export const SystemSettingsPage: React.FC = () => {
     systemVersion: 'v1.1.0',
     dataRetentionDays: 365,
     autoCleanupEnabled: false,
+    cleanupCategories: [],
+    lastCleanupAt: undefined,
     sessionTimeoutMinutes: 480,
     passwordExpiryDays: 90,
     maxLoginAttempts: 5,
@@ -69,10 +73,17 @@ export const SystemSettingsPage: React.FC = () => {
     try {
       // 保存二维码基础URL（使用统一api封装，自动携带token与刷新逻辑）
       await api.put('/system-settings/qr-base-url', { qrBaseUrl: settings.qrBaseUrl || null })
-      
+
+      // 保存清理相关设置
+      await api.put('/system-settings/cleanup', {
+        autoCleanupEnabled: settings.autoCleanupEnabled,
+        dataRetentionDays: settings.dataRetentionDays,
+        categories: settings.cleanupCategories
+      })
+
       // 模拟API调用
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      
+      await new Promise(resolve => setTimeout(resolve, 300))
+
       setIsModified(false)
       toast.success("系统设置已成功更新")
     } catch (error: any) {
@@ -88,6 +99,8 @@ export const SystemSettingsPage: React.FC = () => {
       systemVersion: 'v1.1.0',
       dataRetentionDays: 365,
       autoCleanupEnabled: false,
+      cleanupCategories: [],
+      lastCleanupAt: undefined,
       sessionTimeoutMinutes: 480,
       passwordExpiryDays: 90,
       maxLoginAttempts: 5,
@@ -101,13 +114,17 @@ export const SystemSettingsPage: React.FC = () => {
 
   const handleSystemCleanup = async () => {
     try {
-      // 这里应该调用API执行系统清理
-      // await systemApi.performCleanup()
-      
-      // 模拟API调用
-      await new Promise(resolve => setTimeout(resolve, 2000))
-      
-      toast.success("已清理过期数据和临时文件")
+      const resp: any = await api.post('/system-settings/cleanup/execute')
+      const data = resp?.data || resp
+      const counts = data?.counts || {}
+      const total = data?.total || 0
+      const last = data?.lastCleanupAt
+      if (last) setSettings(prev => ({ ...prev, lastCleanupAt: last }))
+      toast.success(`已清理完成，共 ${total} 条；明细：` +
+        `${counts.inspectionLogs ? ` 点检${counts.inspectionLogs}` : ''}` +
+        `${counts.auditLogs ? ` 审计${counts.auditLogs}` : ''}` +
+        `${counts.securityLogs ? ` 安全${counts.securityLogs}` : ''}` +
+        `${counts.errorLogs ? ` 错误${counts.errorLogs}` : ''}`)
     } catch (error: any) {
       toast.error(error.message || "执行系统清理时发生错误")
     }
@@ -122,7 +139,14 @@ export const SystemSettingsPage: React.FC = () => {
       try {
         const data: any = await api.get('/system-settings')
         if (data?.data) {
-          setSettings(prev => ({ ...prev, qrBaseUrl: data.data.qrBaseUrl ?? prev.qrBaseUrl }))
+          setSettings(prev => ({
+            ...prev,
+            qrBaseUrl: data.data.qrBaseUrl ?? prev.qrBaseUrl,
+            autoCleanupEnabled: typeof data.data.autoCleanupEnabled === 'boolean' ? data.data.autoCleanupEnabled : prev.autoCleanupEnabled,
+            dataRetentionDays: typeof data.data.dataRetentionDays === 'number' ? data.data.dataRetentionDays : prev.dataRetentionDays,
+            cleanupCategories: Array.isArray(data.data.cleanupCategories) ? data.data.cleanupCategories : prev.cleanupCategories,
+            lastCleanupAt: data.data.lastCleanupAt || prev.lastCleanupAt
+          }))
         }
       } catch (e: any) {
         log.warn('加载系统设置失败', e?.message || e)
@@ -237,7 +261,11 @@ export const SystemSettingsPage: React.FC = () => {
                     min="30"
                     max="3650"
                     value={settings.dataRetentionDays}
-                    onChange={(e) => handleSettingChange('dataRetentionDays', parseInt(e.target.value) || 365)}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value)
+                      const next = Number.isFinite(v) ? Math.max(30, Math.min(3650, v)) : 365
+                      handleSettingChange('dataRetentionDays', next)
+                    }}
                   />
                   <p className="text-sm text-gray-500">
                     系统将保留指定天数内的数据，超期数据将被自动清理
@@ -256,6 +284,61 @@ export const SystemSettingsPage: React.FC = () => {
                     启用后系统将每日自动清理过期数据
                   </p>
                 </div>
+                <div className="space-y-2 md:col-span-2">
+                  <Label>清理内容</Label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {[
+                      { key: 'inspectionLogs', label: '点检记录' },
+                      { key: 'auditLogs', label: '审计日志' },
+                      { key: 'securityLogs', label: '安全日志' },
+                      { key: 'errorLogs', label: '错误日志' }
+                    ].map(item => (
+                      <label key={item.key} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4"
+                          checked={settings.cleanupCategories.includes(item.key)}
+                          onChange={(e) => {
+                            const set = new Set(settings.cleanupCategories)
+                            if (e.target.checked) set.add(item.key)
+                            else set.delete(item.key)
+                            handleSettingChange('cleanupCategories', Array.from(set))
+                          }}
+                        />
+                        {item.label}
+                      </label>
+                    ))}
+                  </div>
+                  <p className="text-sm text-gray-500">
+                    可选择要参与自动/手动清理的数据类别；默认不选中任何项。
+                  </p>
+                </div>
+              </div>
+              <Separator />
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-gray-600">手动一键清理（使用以上清理内容与保留天数）</div>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="outline" size="sm">
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      一键清理
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>确认执行一键清理</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        将根据“清理内容”和“数据保留天数”清理过期数据、日志，操作不可撤销。是否继续？
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>取消</AlertDialogCancel>
+                      <AlertDialogAction onClick={handleSystemCleanup}>
+                        确认清理
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               </div>
             </CardContent>
           </Card>
@@ -394,7 +477,7 @@ export const SystemSettingsPage: React.FC = () => {
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-sm">上次清理</span>
-                      <span className="text-sm text-gray-500">2025-01-15</span>
+                      <span className="text-sm text-gray-500">{settings.lastCleanupAt ? new Date(settings.lastCleanupAt).toLocaleString() : '从未'}</span>
                     </div>
                   </div>
                 </div>

@@ -87,7 +87,22 @@ router.get('/', authenticate, authorize('*:*'), async (req, res) => {
           }
         });
     }
-    return res.json({ success: true, data: { qrBaseUrl: normalized } });
+    // —— 扩展：数据清理相关设置 ——
+    const autoCleanupEnabled = (map['auto_cleanup_enabled'] || 'false') === 'true';
+    const dataRetentionDays = parseInt(map['data_retention_days'] || '365', 10) || 365;
+    let cleanupCategories = [];
+    try {
+      cleanupCategories = JSON.parse(map['cleanup_categories'] || '[]');
+    } catch (_) { cleanupCategories = []; }
+    const lastCleanupAt = map['last_cleanup_at'] || '';
+
+    return res.json({ success: true, data: { 
+      qrBaseUrl: normalized,
+      autoCleanupEnabled,
+      dataRetentionDays,
+      cleanupCategories,
+      lastCleanupAt
+    } });
   } catch (e) {
     if (process.env.QR_DEBUG === 'true') {
       console.log('[QR_DEBUG][GET /system-settings] error:', e.message);
@@ -155,6 +170,34 @@ router.put('/qr-base-url', authenticate, authorize('*:*'), async (req, res) => {
     delete QRCodeGenerator._cachedQrBaseUrl;
     QRCodeGenerator._cachedSettingChecked = false;
     return res.json({ success: true, data: { qrBaseUrl: qrBaseUrl || '' } });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// 更新清理相关设置
+router.put('/cleanup', authenticate, authorize('*:*'), async (req, res) => {
+  try {
+    const { autoCleanupEnabled, dataRetentionDays, categories } = req.body || {};
+    // 简要校验
+    const enabled = !!autoCleanupEnabled;
+    const daysNum = parseInt(dataRetentionDays, 10);
+    const days = Number.isFinite(daysNum) ? Math.max(30, Math.min(3650, daysNum)) : 365;
+    let cats = Array.isArray(categories) ? categories : [];
+    const DataCleanupService = require('../services/data-cleanup.service');
+    const saved = await DataCleanupService.saveSettings({ autoCleanupEnabled: enabled, dataRetentionDays: days, categories: cats });
+    return res.json({ success: true, data: saved });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// 手动执行一键清理
+router.post('/cleanup/execute', authenticate, authorize('*:*'), async (req, res) => {
+  try {
+    const DataCleanupService = require('../services/data-cleanup.service');
+    const result = await DataCleanupService.cleanupNow();
+    return res.json({ success: true, data: result });
   } catch (e) {
     return res.status(500).json({ success: false, message: e.message });
   }
