@@ -208,7 +208,7 @@ export const Sidebar: React.FC = () => {
         {/* 系统版本信息 */}
         <div className="text-xs text-gray-500 text-center pt-2">
           <p>消防器材点检管理系统</p>
-          <p className="mt-1">v1.0.0</p>
+          <p className="mt-1">v1.1.0</p>
         </div>
       </div>
     </div>

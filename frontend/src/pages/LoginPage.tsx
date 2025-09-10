@@ -233,7 +233,7 @@ export const LoginPage: React.FC = () => {
             
             <div className="mt-6 text-center">
               <p className="text-xs text-muted-foreground">
-                消防器材点检管理系统 v1.0
+                消防器材点检管理系统 v1.1.0
               </p>
             </div>
           </CardContent>

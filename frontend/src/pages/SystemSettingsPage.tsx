@@ -36,7 +36,7 @@ export const SystemSettingsPage: React.FC = () => {
   const { isSuperAdmin, token } = useAuthStore()
   const [settings, setSettings] = useState<SystemSettings>({
     systemName: '消防器材点检管理系统',
-    systemVersion: 'v1.0.0',
+    systemVersion: 'v1.1.0',
     dataRetentionDays: 365,
     autoCleanupEnabled: false,
     sessionTimeoutMinutes: 480,
@@ -85,7 +85,7 @@ export const SystemSettingsPage: React.FC = () => {
   const handleResetSettings = () => {
     setSettings({
       systemName: '消防器材点检管理系统',
-      systemVersion: 'v1.0.0',
+      systemVersion: 'v1.1.0',
       dataRetentionDays: 365,
       autoCleanupEnabled: false,
       sessionTimeoutMinutes: 480,
