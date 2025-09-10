@@ -182,18 +182,31 @@ class ValidationHelper {
         'string.max': '处理方案不能超过1000个字符',
         'any.required': '处理方案为必填项'
       }),
+      // 新增：多图字段，允许数组或JSON字符串，向下兼容
+      fixedImageUrls: Joi.alternatives().try(
+        Joi.array().items(
+          Joi.string().custom((value, helpers) => {
+            if (value.startsWith('/uploads/') || /^https?:\/\//i.test(value) || value.match(/^https?:\/\/.+\.(jpg|jpeg|png|gif|webp)$/i)) {
+              return value;
+            }
+            return helpers.error('string.invalidImageUrl');
+          })
+        ).min(1),
+        Joi.string().min(3)
+      ).optional(),
+      // 修改：单图字段改为可选，与 fixedImageUrls 二选一
       fixedImageUrl: Joi.string().custom((value, helpers) => {
         // 允许相对路径(以/开头)或完整URL
         if (value.startsWith('/uploads/') || 
-            value.match(/^https?:\/\/.+\.(jpg|jpeg|png|gif|webp)$/i)) {
+            value.match(/^https?:\/\/.+\.(jpg|jpeg|png|gif|webp)$/i) ||
+            /^https?:\/\//i.test(value)) {
           return value;
         }
         return helpers.error('string.invalidImageUrl');
-      }).required().messages({
-        'string.invalidImageUrl': '处理后图片URL格式不正确，必须是/uploads/开头的相对路径或有效的图片URL',
-        'any.required': '处理后图片为必填项'
+      }).messages({
+        'string.invalidImageUrl': '处理后图片URL格式不正确，必须是/uploads/开头的相对路径或有效的图片URL'
       })
-    }),
+    }).or('fixedImageUrls', 'fixedImageUrl'),
 
     audit: Joi.object({
       approved: Joi.boolean().required().messages({

@@ -11,6 +11,9 @@ const issueController = require('../controllers/issue.controller');
 
 // 导入中间件
 const ValidationHelper = require('../utils/validation.helper');
+const EnhancedAuthMiddleware = require('../middleware/enhanced-auth.middleware');
+const auth = new EnhancedAuthMiddleware();
+const { authorize } = auth;
 
 /**
  * 隐患管理路由定义
@@ -54,6 +57,7 @@ router.get('/:id', issueController.getIssueById);
 
 // 处理隐患
 router.put('/:id/handle', 
+  authorize('issue:handle'),
   ValidationHelper.validateMiddleware(
     ValidationHelper.issueSchema.handle, 
     'body'

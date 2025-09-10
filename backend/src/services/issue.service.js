@@ -94,10 +94,12 @@ class IssueService {
         console.log('🔍 [隐患服务调试] ⚠️  无厂区过滤条件 (使用全部可见)');
       }
 
-      // 点检员只能查看自己上报的隐患
-      if (userRole === 'INSPECTOR' && userId) {
-        andConds.push({ reporterId: userId });
-        console.log('🔍 [隐患服务调试] 添加点检员过滤条件:', { reporterId: userId });
+      // 放宽点检员可见范围：允许查看本厂区“待处理”隐患（用于整改）。如未显式传入 status，则默认限制为 PENDING。
+      if (userRole === 'INSPECTOR') {
+        if (!status) {
+          andConds.push({ status: 'PENDING' });
+          console.log('🔍 [隐患服务调试] 点检员默认仅查看待处理隐患');
+        }
       } else if (reporterId) {
         andConds.push({ reporterId });
         console.log('🔍 [隐患服务调试] 添加上报人过滤条件:', { reporterId });
@@ -415,10 +417,7 @@ class IssueService {
         throw new Error('无权查看该隐患');
       }
 
-      // 点检员只能查看自己上报的隐患
-      if (userRole === 'INSPECTOR' && issue.reporterId !== userId) {
-        throw new Error('无权查看该隐患');
-      }
+      // 放宽：点检员可查看本厂区隐患（用于整改），厂区数据隔离已在上方校验
 
       const issueImages = ImageHelper.extractImages(issue, 'issueImageUrls', 'issueImageUrl');
       const fixedImages = ImageHelper.extractImages(issue, 'fixedImageUrls', 'fixedImageUrl');

@@ -23,6 +23,8 @@ import { MobileDashboard } from '@/pages/mobile/MobileDashboard'
 import { MobileInspectionPage } from '@/pages/mobile/MobileInspectionPage'
 import { MobileInspectionSuccessPage } from '@/pages/mobile/MobileInspectionSuccessPage'
 import { MobileInspectionRecordsPage } from '@/pages/mobile/MobileInspectionRecordsPage'
+import MobileIssueManagePage from '@/pages/mobile/MobileIssueManagePage'
+import MobileIssueHandlePage from '@/pages/mobile/MobileIssueHandlePage'
 import { UserRole } from '@/types'
 import CameraDemoPage from '@/pages/CameraDemoPage'
 
@@ -102,6 +104,24 @@ function App() {
           element={
             <ProtectedRoute>
               <MyIssuesPage />
+            </ProtectedRoute>
+          } 
+        />
+
+        <Route 
+          path="/m/issue-manage" 
+          element={
+            <ProtectedRoute>
+              <MobileIssueManagePage />
+            </ProtectedRoute>
+          } 
+        />
+
+        <Route 
+          path="/m/issues/:id/handle" 
+          element={
+            <ProtectedRoute requiredRoles={[UserRole.INSPECTOR, UserRole.FACTORY_ADMIN, UserRole.SUPER_ADMIN]}>
+              <MobileIssueHandlePage />
             </ProtectedRoute>
           } 
         />

@@ -386,7 +386,8 @@ class PermissionInitializer {
         'inspection:read',
         'inspection:create',
         'issue:create',
-        'issue:read'
+        'issue:read',
+        'issue:handle'
       ]
     },
     {

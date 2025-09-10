@@ -210,6 +210,18 @@ export const MobileDashboard: React.FC = () => {
                 <div className="text-xs text-muted-foreground">查看处理状态</div>
               </div>
             </Button>
+
+            <Button
+              variant="outline"
+              className="w-full justify-start h-12"
+              onClick={() => navigate('/m/issue-manage')}
+            >
+              <Settings className="mr-3 h-5 w-5" />
+              <div className="text-left">
+                <div className="font-medium">隐患管理（查看与整改）</div>
+                <div className="text-xs text-muted-foreground">处理厂区内未完成整改的隐患</div>
+              </div>
+            </Button>
           </CardContent>
         </Card>
 

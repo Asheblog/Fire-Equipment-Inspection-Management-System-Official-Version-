@@ -102,10 +102,8 @@ class IssueController {
         return ResponseHelper.badRequest(res, '隐患ID格式不正确');
       }
 
-      // 权限检查：只有厂区管理员和超级管理员可以处理隐患
-      if (user.role === 'INSPECTOR') {
-        return ResponseHelper.forbidden(res, '无权处理隐患');
-      }
+      // 权限检查调整：允许 INSPECTOR 执行整改；后续仍会进行厂区数据隔离校验（见 userFactoryId 校验）
+      // 原限制已移除，保持与“点检员可整改本厂区隐患”的需求一致
 
       // 请求体已在路由层验证
       const validatedBody = req.body;
