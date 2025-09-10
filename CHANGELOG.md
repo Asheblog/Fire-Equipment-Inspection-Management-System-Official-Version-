@@ -19,6 +19,27 @@
 - PUT `/api/system-settings/cleanup`：更新清理相关设置（默认关闭）。
 - POST `/api/system-settings/cleanup/execute`：一键手动清理，返回各类别清理条数及总计。
 
+### 🔐 安全设置（记住我）
+- GET `/api/system-settings`：新增返回
+  - `rememberMeEnabled: boolean`
+  - `rememberMeDays: number`（7~365，默认90）
+- PUT `/api/system-settings/security`：保存“记住我”开关与天数
+- 登录刷新令牌：当 `rememberMeEnabled=true` 时，`AuthService.generateRefreshToken` 按配置生成长效刷新令牌（`rememberMeDays` 天）；关闭时回落为普通刷新令牌时长。
+
+### 🔐 安全设置（会话/登录/审计/重置）
+- GET `/api/system-settings`：新增返回
+  - `sessionTimeoutMinutes: number`（15~1440，默认480）
+  - `maxLoginAttempts: number`（3~10，默认5）
+  - `enableAuditLogging: boolean`（默认 true）
+  - `allowPasswordReset: boolean`（默认 true）
+- PUT `/api/system-settings/security`：保存以上安全设置
+- 生效说明：
+  - 会话超时：登录/刷新时 Access Token 过期按 `sessionTimeoutMinutes` 生成（形如 `Xm`）。
+- 最大登录尝试：登录接口叠加动态限流，按配置值限制每15分钟尝试次数（向下兼容原有限流）。
+  - 已调整为完全动态：登录限流器不再叠加固定5次上限，仅受系统设置 `maxLoginAttempts` 控制。
+  - 审计开关：关闭时不再写入审计日志（安全/错误日志不受影响）。
+  - 重置密码开关：关闭时管理员重置密码接口拒绝执行。
+
 ### 🖥️ 前端（系统设置）
 - 页面：`frontend/src/pages/SystemSettingsPage.tsx`
   - “数据管理”卡片新增“清理内容”多选（点检记录/审计日志/安全日志/错误日志）。
@@ -28,6 +49,7 @@
 
 ### 🧩 兼容
 - 保持原有二维码基础 URL 设置接口不变（`/api/system-settings/qr-base-url`）。
+- 安全设置新增“记住我”开关与天数输入（7~365，默认90）。
 - 系统设置拉取接口向后兼容：旧前端仅使用 `qrBaseUrl` 不受影响。
 
 

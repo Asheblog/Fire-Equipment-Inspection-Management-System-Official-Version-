@@ -1,4 +1,5 @@
 const rateLimit = require('express-rate-limit');
+const SecuritySettingsService = require('../services/security-settings.service');
 
 /**
  * 消防器材点检系统 - 速率限制配置
@@ -12,6 +13,7 @@ const rateLimit = require('express-rate-limit');
 
 class RateLimiter {
   constructor() {
+    this.securitySettingsService = new SecuritySettingsService();
     this.setupLimiters();
   }
 
@@ -199,7 +201,38 @@ class RateLimiter {
    * @returns {Function} Express中间件
    */
   getAuthLimiter() {
-    return this.authLimiter;
+    // 动态读取系统设置决定最大登录尝试次数（叠加原有限流器）
+    const dynamicLimiter = this.createCustomLimiter({
+      windowMs: 15 * 60 * 1000,
+      limit: async () => {
+        try {
+          const sec = await this.securitySettingsService.getSettings();
+          return sec.authMaxLoginAttempts || 5;
+        } catch (_) {
+          return 5;
+        }
+      },
+      keyGenerator: (req) => {
+        const ip = req.ip || req.connection.remoteAddress;
+        const username = req.body?.username || 'unknown';
+        return `auth_${ip}_${username}`;
+      },
+      skipSuccessfulRequests: true,
+      message: {
+        error: 'AUTH_RATE_LIMIT_EXCEEDED',
+        message: '登录尝试过于频繁，请15分钟后重试'
+      },
+      handler: (req, res) => {
+        console.warn(`登录限流触发 - IP: ${req.ip}, Username: ${req.body?.username}, Time: ${new Date().toISOString()}`);
+        res.status(429).json({
+          error: 'AUTH_RATE_LIMIT_EXCEEDED',
+          message: '登录尝试过于频繁，请15分钟后重试',
+          retryAfter: Math.round(req.rateLimit.resetTime.getTime() / 1000),
+          remainingAttempts: req.rateLimit.remaining
+        });
+      }
+    });
+    return dynamicLimiter;
   }
 
   /**

@@ -31,6 +31,8 @@ interface SystemSettings {
   enableAuditLogging: boolean
   allowPasswordReset: boolean
   qrBaseUrl: string
+  rememberMeEnabled: boolean
+  rememberMeDays: number
 }
 
 export const SystemSettingsPage: React.FC = () => {
@@ -48,7 +50,9 @@ export const SystemSettingsPage: React.FC = () => {
     maxLoginAttempts: 5,
     enableAuditLogging: true,
     allowPasswordReset: true,
-    qrBaseUrl: ''
+    qrBaseUrl: '',
+    rememberMeEnabled: true,
+    rememberMeDays: 90
   })
 
   const [isModified, setIsModified] = useState(false)
@@ -81,6 +85,16 @@ export const SystemSettingsPage: React.FC = () => {
         categories: settings.cleanupCategories
       })
 
+      // 保存安全设置（会话超时/登录尝试/审计/重置密码/记住我）
+      await api.put('/system-settings/security', {
+        sessionTimeoutMinutes: settings.sessionTimeoutMinutes,
+        maxLoginAttempts: settings.maxLoginAttempts,
+        enableAuditLogging: settings.enableAuditLogging,
+        allowPasswordReset: settings.allowPasswordReset,
+        rememberMeEnabled: settings.rememberMeEnabled,
+        rememberMeDays: settings.rememberMeDays
+      })
+
       // 模拟API调用
       await new Promise(resolve => setTimeout(resolve, 300))
 
@@ -106,7 +120,9 @@ export const SystemSettingsPage: React.FC = () => {
       maxLoginAttempts: 5,
       enableAuditLogging: true,
       allowPasswordReset: true,
-      qrBaseUrl: ''
+      qrBaseUrl: '',
+      rememberMeEnabled: true,
+      rememberMeDays: 90
     })
     setIsModified(false)
     toast.success("所有设置已恢复为默认值")
@@ -145,7 +161,13 @@ export const SystemSettingsPage: React.FC = () => {
             autoCleanupEnabled: typeof data.data.autoCleanupEnabled === 'boolean' ? data.data.autoCleanupEnabled : prev.autoCleanupEnabled,
             dataRetentionDays: typeof data.data.dataRetentionDays === 'number' ? data.data.dataRetentionDays : prev.dataRetentionDays,
             cleanupCategories: Array.isArray(data.data.cleanupCategories) ? data.data.cleanupCategories : prev.cleanupCategories,
-            lastCleanupAt: data.data.lastCleanupAt || prev.lastCleanupAt
+            lastCleanupAt: data.data.lastCleanupAt || prev.lastCleanupAt,
+            sessionTimeoutMinutes: typeof data.data.sessionTimeoutMinutes === 'number' ? data.data.sessionTimeoutMinutes : prev.sessionTimeoutMinutes,
+            maxLoginAttempts: typeof data.data.maxLoginAttempts === 'number' ? data.data.maxLoginAttempts : prev.maxLoginAttempts,
+            enableAuditLogging: typeof data.data.enableAuditLogging === 'boolean' ? data.data.enableAuditLogging : prev.enableAuditLogging,
+            allowPasswordReset: typeof data.data.allowPasswordReset === 'boolean' ? data.data.allowPasswordReset : prev.allowPasswordReset,
+            rememberMeEnabled: typeof data.data.rememberMeEnabled === 'boolean' ? data.data.rememberMeEnabled : prev.rememberMeEnabled,
+            rememberMeDays: typeof data.data.rememberMeDays === 'number' ? data.data.rememberMeDays : prev.rememberMeDays
           }))
         }
       } catch (e: any) {
@@ -340,6 +362,41 @@ export const SystemSettingsPage: React.FC = () => {
                   </AlertDialogContent>
                 </AlertDialog>
               </div>
+
+              <Separator />
+
+              {/* 记住我设置 */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="rememberMeEnabled">启用“记住我”</Label>
+                    <Switch
+                      id="rememberMeEnabled"
+                      checked={settings.rememberMeEnabled}
+                      onCheckedChange={(checked) => handleSettingChange('rememberMeEnabled', checked)}
+                    />
+                  </div>
+                  <p className="text-sm text-gray-500">允许长效登录（刷新令牌），适合受信任设备</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="rememberMeDays">“记住我”天数</Label>
+                  <Input
+                    id="rememberMeDays"
+                    type="number"
+                    min={7}
+                    max={365}
+                    value={settings.rememberMeDays}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value)
+                      const next = Number.isFinite(v) ? Math.max(7, Math.min(365, v)) : 90
+                      handleSettingChange('rememberMeDays', next)
+                    }}
+                    disabled={!settings.rememberMeEnabled}
+                  />
+                  <p className="text-sm text-gray-500">建议7-180天，默认90天</p>
+                </div>
+              </div>
+
             </CardContent>
           </Card>
 

@@ -244,9 +244,34 @@ GET /api/reports/recent-activity     # 最近活动
   - `cleanup_categories`: JSON 数组，可选 `inspectionLogs`/`auditLogs`/`securityLogs`/`errorLogs`
   - `last_cleanup_at`: 最近一次清理时间（ISO 字符串）
 - API：
-  - GET `/api/system-settings`：返回上述字段（兼容原 `qrBaseUrl` 字段）
-  - PUT `/api/system-settings/cleanup`：更新清理相关设置
-  - POST `/api/system-settings/cleanup/execute`：手动触发清理，返回各类别清理条数与总计
+- GET `/api/system-settings`：返回上述字段（兼容原 `qrBaseUrl` 字段）
+- PUT `/api/system-settings/cleanup`：更新清理相关设置
+- POST `/api/system-settings/cleanup/execute`：手动触发清理，返回各类别清理条数与总计
+  
+### 9. 系统设置：安全（记住我）
+- 运行时配置：存储在 `system_settings` 表
+  - `remember_me_enabled`: 是否启用“记住我”登录（默认 true）
+  - `remember_me_days`: “记住我”刷新令牌有效天数（7~365，默认 90）
+- 接口：
+  - GET `/api/system-settings`：返回上述字段
+  - PUT `/api/system-settings/security`：保存“记住我”相关设置
+- 生效逻辑：
+  - 登录成功并勾选“记住我”时，`AuthService.generateRefreshToken` 按配置生成相应天数的刷新令牌；若禁用“记住我”，回落为普通刷新令牌时长（环境变量 `REFRESH_TOKEN_EXPIRES_IN`）。
+
+### 10. 系统设置：安全（会话/登录/审计/重置）
+- 运行时配置：
+  - `session_timeout_minutes`：会话超时（Access Token 有效分钟数，15~1440，默认480）
+  - `auth_max_login_attempts`：最大登录尝试次数（每15分钟，3~10，默认5）
+  - `enable_audit_logging`：是否启用审计日志（默认 true）
+  - `allow_password_reset`：是否允许管理员重置密码（默认 true）
+- 接口：
+  - GET `/api/system-settings`：返回上述字段
+  - PUT `/api/system-settings/security`：保存上述字段
+- 生效逻辑：
+  - 会话超时：登录/刷新时生成的 Access Token 过期时间按配置计算。
+  - 最大登录尝试：登录路由叠加动态限流（向下兼容原5次限制），按配置对 IP+用户名 进行限制。
+  - 审计开关：关闭后 `AuditLogger.logUserAction` 不再写入审计日志；安全/错误日志仍会记录。
+  - 重置密码开关：关闭后 `PUT /api/users/:id/password` 将返回 403。
 - 自动任务：默认关闭；启用后每日 03:30 执行一次（`src/services/data-cleanup.service.js`）
 
 ## 🔐 安全特性

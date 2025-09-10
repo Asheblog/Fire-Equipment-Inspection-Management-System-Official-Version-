@@ -3,8 +3,10 @@ const router = express.Router();
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 const EnhancedAuthMiddleware = require('../middleware/enhanced-auth.middleware');
+const SecuritySettingsService = require('../services/security-settings.service');
 const auth = new EnhancedAuthMiddleware();
 const { authenticate, authorize } = auth;
+const securitySettingsService = new SecuritySettingsService();
 
 // 统一规范化函数（GET 与 PUT 都使用，防止历史脏数据残留）
 function normalizeQrBaseUrl(input) {
@@ -96,12 +98,21 @@ router.get('/', authenticate, authorize('*:*'), async (req, res) => {
     } catch (_) { cleanupCategories = []; }
     const lastCleanupAt = map['last_cleanup_at'] || '';
 
+    // 安全设置（记住我）
+    const sec = await securitySettingsService.getSettings();
+
     return res.json({ success: true, data: { 
       qrBaseUrl: normalized,
       autoCleanupEnabled,
       dataRetentionDays,
       cleanupCategories,
-      lastCleanupAt
+      lastCleanupAt,
+      rememberMeEnabled: sec.rememberMeEnabled,
+      rememberMeDays: sec.rememberMeDays,
+      sessionTimeoutMinutes: sec.sessionTimeoutMinutes,
+      maxLoginAttempts: sec.authMaxLoginAttempts,
+      enableAuditLogging: sec.enableAuditLogging,
+      allowPasswordReset: sec.allowPasswordReset,
     } });
   } catch (e) {
     if (process.env.QR_DEBUG === 'true') {
@@ -198,6 +209,31 @@ router.post('/cleanup/execute', authenticate, authorize('*:*'), async (req, res)
     const DataCleanupService = require('../services/data-cleanup.service');
     const result = await DataCleanupService.cleanupNow();
     return res.json({ success: true, data: result });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// 安全设置（记住我）
+router.put('/security', authenticate, authorize('*:*'), async (req, res) => {
+  try {
+    const {
+      rememberMeEnabled,
+      rememberMeDays,
+      sessionTimeoutMinutes,
+      maxLoginAttempts,
+      enableAuditLogging,
+      allowPasswordReset,
+    } = req.body || {};
+    const saved = await securitySettingsService.saveSettings({
+      rememberMeEnabled,
+      rememberMeDays,
+      sessionTimeoutMinutes,
+      authMaxLoginAttempts: maxLoginAttempts,
+      enableAuditLogging,
+      allowPasswordReset,
+    });
+    return res.json({ success: true, data: saved });
   } catch (e) {
     return res.status(500).json({ success: false, message: e.message });
   }

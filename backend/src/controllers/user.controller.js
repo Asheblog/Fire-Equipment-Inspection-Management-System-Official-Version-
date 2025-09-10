@@ -235,6 +235,15 @@ class UserController {
    */
   async resetUserPassword(req, res) {
     try {
+      // 系统设置校验：是否允许重置密码
+      try {
+        const SecuritySettingsService = require('../services/security-settings.service');
+        const secSvc = new SecuritySettingsService();
+        const sec = await secSvc.getSettings();
+        if (!sec.allowPasswordReset) {
+          return ResponseHelper.forbidden(res, '系统已禁用密码重置');
+        }
+      } catch (_) {}
       const { id } = req.params;
       const { newPassword } = req.body;
       const { user, dataFilter } = req;

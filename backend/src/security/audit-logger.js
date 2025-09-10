@@ -11,10 +11,13 @@ const { PrismaClient } = require('@prisma/client');
  * - 系统异常
  */
 
+const SecuritySettingsService = require('../services/security-settings.service');
+
 class AuditLogger {
   constructor() {
     this.prisma = new PrismaClient();
     this.setupLogLevels();
+    this.securitySettingsService = new SecuritySettingsService();
   }
 
   /**
@@ -79,6 +82,10 @@ class AuditLogger {
    * @param {string} level - 日志级别
    */
   async logUserAction(req, action, resource, details = {}, level = this.LOG_LEVELS.INFO) {
+    try {
+      const sec = await this.securitySettingsService.getSettings();
+      if (!sec.enableAuditLogging) return; // 审计关闭时直接返回
+    } catch (_) {}
     try {
       const logData = {
         level,

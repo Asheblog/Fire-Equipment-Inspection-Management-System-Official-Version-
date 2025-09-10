@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const { PrismaClient } = require('@prisma/client');
 const PermissionService = require('../services/permission.service');
 const TokenBlacklistService = require('../services/token-blacklist.service');
+const SecuritySettingsService = require('../services/security-settings.service');
 
 /**
  * 消防器材点检系统 - 认证服务
@@ -18,6 +19,7 @@ class AuthService {
   constructor() {
     this.prisma = new PrismaClient();
     this.permissionService = new PermissionService();
+    this.securitySettingsService = new SecuritySettingsService();
     this.jwtSecret = process.env.JWT_SECRET || 'fire-safety-jwt-secret-2024';
     this.jwtRefreshSecret = process.env.JWT_REFRESH_SECRET || 'fire-safety-refresh-secret-2024';
     this.jwtExpiresIn = process.env.JWT_EXPIRES_IN || '24h';
@@ -97,7 +99,7 @@ class AuthService {
       };
       console.log('🎫 [AuthService] 生成JWT Token数据:', tokenData);
 
-      const accessToken = this.generateAccessToken(tokenData);
+      const accessToken = this.generateAccessToken(tokenData, await this.getAccessTokenExpiresIn());
       const rememberMe = !!options.rememberMe;
       const refreshToken = await this.generateRefreshToken(user.id, { rememberMe });
 
@@ -108,7 +110,7 @@ class AuthService {
         success: true,
         accessToken,
         refreshToken,
-        expiresIn: this.jwtExpiresIn,
+        expiresIn: await this.getAccessTokenExpiresIn(),
         user: {
           ...userInfo,
           role: effectiveRole,  // 使用确定的有效角色，而不是数据库原始角色
@@ -186,12 +188,12 @@ class AuthService {
       };
       console.log('🎫 [AuthService] Refresh - 生成JWT Token数据:', tokenData);
 
-      const accessToken = this.generateAccessToken(tokenData);
+      const accessToken = this.generateAccessToken(tokenData, await this.getAccessTokenExpiresIn());
 
       return {
         success: true,
         accessToken,
-        expiresIn: this.jwtExpiresIn,
+        expiresIn: await this.getAccessTokenExpiresIn(),
         user: {
           ...user,
           role: effectiveRole,  // 也在刷新时返回有效角色
@@ -325,7 +327,7 @@ class AuthService {
    * @param {Object} payload - Token载荷
    * @returns {string} JWT Token
    */
-  generateAccessToken(payload) {
+  generateAccessToken(payload, expiresInOverride = null) {
     return jwt.sign(
       {
         ...payload,
@@ -335,11 +337,28 @@ class AuthService {
       },
       this.jwtSecret,
       {
-        expiresIn: this.jwtExpiresIn,
+        expiresIn: expiresInOverride || this.jwtExpiresIn,
         issuer: 'fire-safety-system',
         audience: 'fire-safety-client'
       }
     );
+  }
+  
+  /**
+   * 读取系统设置，计算Access Token有效期
+   */
+  async getAccessTokenExpiresIn() {
+    try {
+      const SecuritySettingsService = require('../services/security-settings.service');
+      if (!this.securitySettingsService) {
+        this.securitySettingsService = new SecuritySettingsService();
+      }
+      const sec = await this.securitySettingsService.getSettings();
+      const minutes = Math.max(15, Math.min(1440, parseInt(sec.sessionTimeoutMinutes || 480, 10) || 480));
+      return `${minutes}m`;
+    } catch (_) {
+      return this.jwtExpiresIn;
+    }
   }
 
   /**
@@ -355,11 +374,28 @@ class AuthService {
       jti: this.generateTokenId()
     };
 
+    // 动态计算刷新令牌有效期
+    let expiresIn = this.refreshTokenExpiresIn;
+    if (rememberMe) {
+      try {
+        const sec = await this.securitySettingsService.getSettings();
+        if (sec.rememberMeEnabled) {
+          const days = Math.max(7, Math.min(365, parseInt(sec.rememberMeDays || 90, 10) || 90));
+          expiresIn = `${days}d`;
+        } else {
+          expiresIn = this.refreshTokenExpiresIn;
+        }
+      } catch (_) {
+        // 回退到环境变量/默认
+        expiresIn = this.longRefreshTokenExpiresIn;
+      }
+    }
+
     return jwt.sign(
       refreshTokenData,
       this.jwtRefreshSecret,
       {
-        expiresIn: rememberMe ? this.longRefreshTokenExpiresIn : this.refreshTokenExpiresIn,
+        expiresIn,
         issuer: 'fire-safety-system',
         audience: 'fire-safety-client'
       }
