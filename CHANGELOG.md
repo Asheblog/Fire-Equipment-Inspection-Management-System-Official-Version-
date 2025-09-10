@@ -1,6 +1,78 @@
 # 更新日志
 > 注：历史记录中提及的 deploy-simple.js / secure-deploy.js 已统一为 deploy.js（现行脚本名）。
 
+## 2025-09-10（点检记录删除 + 权限码管控）
+
+### ✨ 新功能 / 变更摘要
+- 新增“删除点检记录”能力：支持系统管理员或具备权限码 `inspection:delete` 的用户删除点检记录。
+  - 同时删除关联隐患（若存在）。
+  - 自动回收设备状态：若该设备无其他未结隐患，则恢复为 `NORMAL`；否则保持/设为 `ABNORMAL`。
+  - 自动回收设备最后点检时间：重置为该设备剩余点检记录中的最新时间，若无记录则置空。
+  - 清理图片：事务成功后，若相关图片未被任何记录引用，将安全删除 `/uploads/` 下的物理文件（带目录逃逸保护）。
+- 新增权限码 `inspection:delete`（模块：inspection），并将后端路由守卫切换为权限检查：
+  - 旧：`requireRole(['SUPER_ADMIN'])`
+  - 新：`authorize('inspection:delete')`
+  - SUPER_ADMIN 仍然默认拥有全部权限（`*`），无需单独授予。
+- 前端（管理端）在“点检记录”列表与详情页新增“删除”按钮：
+  - 仅对 SUPER_ADMIN 或拥有 `inspection:delete` 的用户显示。
+  - 带二次确认弹窗，删除成功后自动刷新列表/关闭详情。
+
+受影响文件（节选）
+- 后端
+  - `backend/src/services/inspection.service.js`：新增 `deleteInspection` 实现；服务层权限兜底校验；图片清理/设备状态回收。
+  - `backend/src/controllers/inspection.controller.js`：新增控制器方法 `deleteInspection`。
+  - `backend/src/routes/inspection.routes.js`：`DELETE /api/inspections/:id` 改为 `authorize('inspection:delete')` 守卫。
+  - `backend/src/scripts/init-permissions.js`：新增权限定义 `inspection:delete`，并纳入初始化。
+  - `backend/src/routes/index.js`：API 信息中补充 inspections.delete。
+- 前端
+  - `frontend/src/api/index.ts`：新增 `inspectionApi.delete(id)`。
+  - `frontend/src/pages/InspectionRecordsPage.tsx`：列表“操作”列与详情弹窗右上角增加“删除”按钮（仅在拥有权限时可见，`AlertDialog` 二次确认）。
+  - `frontend/src/types/index.ts`：`User` 类型新增可选 `permissions` 字段以便基于权限显示。
+
+### 🚀 升级步骤（务必按顺序执行）
+1) 安装依赖（如近期未更新）
+   - 后端：`npm --prefix backend i`
+   - 前端：`npm --prefix frontend i`
+
+2) 同步 Prisma Client（本次无 Schema 改动，可跳过 db push/migrate）
+   - `npm --prefix backend run db:generate`
+
+3) 初始化/更新系统权限（关键）
+   - 执行：`npm --prefix backend run db:init-permissions`
+   - 作用：Upsert 全量系统权限定义（含本次新增 `inspection:delete`），并为预设角色写入对应权限集（SUPER_ADMIN 依然是全部权限）。
+   - 注意：该脚本会对“预设角色”的权限集合执行重建（先清空再写入）。若你对这些角色做过自定义微调，请在执行前备份或在脚本中关闭相应重建逻辑。
+
+4) 重启后端服务
+   - `npm --prefix backend run start`（或开发环境 `npm --prefix backend run dev`）
+
+5) 刷新前端并重新登录一次
+   - 新权限下的删除按钮基于用户 `permissions` 显示。登录后会自动携带权限；或者进入“点检记录”页时，前端会调用 `/api/auth/profile` 回填。
+   - 服务端存在 5 分钟权限缓存（`EnhancedAuthMiddleware.permissionCache`），如刚赋权仍未生效，可等待缓存过期、让用户重新登录或重启后端。
+
+6)（可选）为非超级管理员授予删除权限
+   - 方式一：在“权限管理 > 角色权限”中为目标角色增加 `inspection:delete`。
+   - 方式二：在“权限管理 > 个人权限”中直接授予给某个用户。
+
+### ⚠️ 重要注意事项
+- 行为变化：`DELETE /api/inspections/:id` 由“角色判定”切换为“权限码判定”。若你的管理员账号不是 SUPER_ADMIN 且未被授予 `inspection:delete`，将收到 403。
+- 级联删除：删除点检记录会同时删除关联隐患（若有）。请确认这是你的业务预期；若需保留隐患记录，请告知以调整为“解除关联但保留隐患”。
+- 图片物理删除：仅对 `/uploads/` 目录下、且未被其他记录引用的文件执行删除。请确保该目录有备份策略；若结合外部对象存储，请遵从各自生命周期策略。
+- 设备状态回收：本次删除会“回滚”设备状态与最后点检时间为剩余记录的计算结果（或置空）。线上删除前建议先在测试环境演练验证业务影响。
+
+### 🔬 验证建议
+1) 用具有 `inspection:delete` 的账号进入“点检记录”列表，验证“删除”按钮显示；点详情页右上角同样存在删除入口。
+2) 删除一条含隐患的点检记录：数据库应同时删除该隐患；设备状态与 `lastInspectedAt` 应被正确回收。
+3) 删除后检查 `/uploads/`：与该记录相关、且未再被引用的文件应被清理（日志中可看到 `[SAFE_UNLINK]` 相关输出）。
+4) 用不具备 `inspection:delete` 的账号调用接口或操作页面，应返回/展示 403 并无删除按钮。
+
+### 🔙 回滚指引
+- 功能回滚：
+  - 代码层面恢复到上一个版本，并将路由守卫改回 `requireRole(['SUPER_ADMIN'])`。
+  - 或保留本版本仅移除 `inspection:delete` 的权限绑定，并把该接口访问权授予其它已有权限/角色。
+- 数据回滚：
+  - 被删除的点检/隐患记录及其图片无法自动恢复，请从数据库与文件备份中还原。
+
+
 ## 2025-09-08（隐患管理增强）
 
 ### ✨ 新功能 / 变更摘要

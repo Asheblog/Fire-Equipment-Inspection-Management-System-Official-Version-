@@ -303,6 +303,10 @@ export const inspectionApi = {
   // 获取指定厂区本月未完成点检设备
   getMonthlyPending: (factoryId: number, month?: string, config?: any): Promise<ApiResponse<Equipment[]>> =>
     api.get('/inspections/monthly-pending', { ...(config || {}), params: { ...(config?.params || {}), factoryId, month } })
+  ,
+  // 删除点检记录（仅超级管理员）
+  delete: (id: number): Promise<ApiResponse<{ deletedInspectionId: number; deletedIssueId?: number | null; equipmentId: number; deletedImageCount: number }>> =>
+    api.delete(`/inspections/${id}`)
 }
 
 // 隐患相关API

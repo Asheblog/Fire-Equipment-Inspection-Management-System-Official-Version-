@@ -248,6 +248,7 @@ router.get('/', (req, res) => {
         list: 'GET /api/inspections',
         create: 'POST /api/inspections',
         detail: 'GET /api/inspections/:id',
+        delete: 'DELETE /api/inspections/:id',
         stats: 'GET /api/inspections/stats',
         trend: 'GET /api/inspections/trend',
         pending: 'GET /api/inspections/pending'

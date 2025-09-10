@@ -1268,6 +1268,111 @@ class InspectionService {
       throw error;
     }
   }
+
+  /**
+   * 删除点检记录（仅限超级管理员）
+   * 同时清理关联的隐患记录，并在可能情况下删除未再引用的本地上传图片。
+   * - 事务内：删除业务数据、回收设备状态/最后点检时间
+   * - 事务外：检查图片引用计数并安全删除物理文件
+   * @param {number} id - 点检记录ID
+   * @param {Object} user - 操作用户（需 SUPER_ADMIN）
+   * @returns {Promise<Object>} 删除摘要
+   */
+  async deleteInspection(id, user) {
+    const hasDeletePerm = Array.isArray(user?.permissions) && user.permissions.some(p => p && p.code === 'inspection:delete');
+    if (!user || (user.role !== 'SUPER_ADMIN' && !hasDeletePerm)) {
+      throw new Error('PERMISSION_DENIED');
+    }
+
+    try {
+      const summary = await this.prisma.$transaction(async (prisma) => {
+        // 加载点检记录及其关联数据
+        const inspection = await prisma.inspectionLog.findUnique({
+          where: { id },
+          include: {
+            equipment: { select: { id: true, status: true } },
+            issue: true
+          }
+        });
+
+        if (!inspection) {
+          throw new Error('点检记录不存在');
+        }
+
+        const equipmentId = inspection.equipmentId;
+        const issueId = inspection.issueId || null;
+
+        // 记录待检查与可能清理的图片URL（在事务外按引用情况做物理删除）
+        const imagesToCheck = [];
+        const inspImages = ImageHelper.extractImages(inspection, 'inspectionImageUrls', 'inspectionImageUrl');
+        imagesToCheck.push(...inspImages);
+
+        if (inspection.issue) {
+          const issueImages = ImageHelper.extractImages(inspection.issue, 'issueImageUrls', 'issueImageUrl');
+          const fixedImages = ImageHelper.extractImages(inspection.issue, 'fixedImageUrls', 'fixedImageUrl');
+          imagesToCheck.push(...issueImages, ...fixedImages);
+        }
+
+        // 删除点检记录
+        await prisma.inspectionLog.delete({ where: { id } });
+
+        // 如存在关联隐患，一并删除
+        if (issueId) {
+          await prisma.issue.delete({ where: { id: issueId } });
+        }
+
+        // 回收设备状态与最后点检时间
+        const [activeIssueCount, lastInspection] = await Promise.all([
+          prisma.issue.count({
+            where: {
+              equipmentId,
+              status: { in: ['PENDING', 'IN_PROGRESS', 'PENDING_AUDIT'] }
+            }
+          }),
+          prisma.inspectionLog.findFirst({
+            where: { equipmentId },
+            orderBy: { inspectionTime: 'desc' },
+            select: { inspectionTime: true }
+          })
+        ]);
+
+        await prisma.equipment.update({
+          where: { id: equipmentId },
+          data: {
+            status: activeIssueCount === 0 ? 'NORMAL' : 'ABNORMAL',
+            lastInspectedAt: lastInspection ? lastInspection.inspectionTime : null
+          }
+        });
+
+        return {
+          deletedInspectionId: id,
+          deletedIssueId: issueId,
+          equipmentId,
+          candidateImages: Array.from(new Set(imagesToCheck))
+        };
+      });
+
+      // 事务外：尝试清理未被引用的本地上传文件
+      let deletedFiles = 0;
+      for (const url of summary.candidateImages) {
+        const stillRef = await this._isFileReferenced(this.prisma, url);
+        if (!stillRef) {
+          await this._safeUnlink(url);
+          deletedFiles += 1;
+        }
+      }
+
+      return {
+        deletedInspectionId: summary.deletedInspectionId,
+        deletedIssueId: summary.deletedIssueId,
+        equipmentId: summary.equipmentId,
+        deletedImageCount: deletedFiles
+      };
+    } catch (error) {
+      console.error('删除点检记录失败:', error);
+      throw error;
+    }
+  }
 }
 
 module.exports = InspectionService;

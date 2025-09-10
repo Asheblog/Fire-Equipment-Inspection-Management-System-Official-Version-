@@ -11,6 +11,9 @@ const inspectionController = require('../controllers/inspection.controller');
 
 // 导入中间件
 const ValidationHelper = require('../utils/validation.helper');
+const EnhancedAuthMiddleware = require('../middleware/enhanced-auth.middleware');
+const auth = new EnhancedAuthMiddleware();
+const { authorize } = auth;
 
 /**
  * 请求体调试中间件 - 记录原始请求数据
@@ -102,5 +105,8 @@ router.delete('/:id/images', inspectionController.removeInspectionImage);
 router.patch('/:id/finalize', inspectionController.finalizeInspection);
 
 router.get('/:id', inspectionController.getInspectionById);
+
+// 删除点检记录（仅超级管理员）
+router.delete('/:id', authorize('inspection:delete'), inspectionController.deleteInspection);
 
 module.exports = router;

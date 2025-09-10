@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { createLogger } from '@/lib/logger'
 import { format } from 'date-fns'
 import { zhCN } from 'date-fns/locale'
-import { CalendarIcon, Filter, Search, FileText, Eye } from 'lucide-react'
+import { CalendarIcon, Filter, Search, FileText, Eye, Trash2, MoreHorizontal } from 'lucide-react'
 import { AuthenticatedImage } from '@/components/AuthenticatedImage'
 import { DataTable } from '@/components/DataTable'
 import { Button } from '@/components/ui/button'
@@ -16,7 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { PageContainer, PageHeader, ContentSection } from '@/components/layout'
 import { useImagePreview } from '@/components/image-preview/ImagePreviewContext'
 import { useAuthStore } from '@/stores/auth'
-import { inspectionApi, userApi, factoryApi } from '@/api'
+import { inspectionApi, userApi, factoryApi, authApi } from '@/api'
 import { parseInspectionImages, parseIssueImages } from '@/utils/imageParse'
 import { ImageGrid } from '@/components/ui/ImageGrid'
 import type { InspectionLog, User, Factory } from '@/types'
@@ -26,6 +26,24 @@ import { formatQrCodeDisplay } from '@/utils/qrCode'
 import type { ColumnDef } from '@tanstack/react-table'
 import type { DateRange } from 'react-day-picker'
 import { useCancelableDialog } from '@/hooks/useCancelableDialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator
+} from '@/components/ui/dropdown-menu'
 
 const log = createLogger('InspectRecords')
 
@@ -51,6 +69,32 @@ interface InspectionDetail extends Omit<InspectionLog, 'checklistResults'> {
 export function InspectionRecordsPage() {
   const { open: openPreview } = useImagePreview()
   const { user } = useAuthStore()
+  const canDelete = useMemo(() => {
+    return user?.role === UserRole.SUPER_ADMIN || (user as any)?.permissions?.some((p: any) => p?.code === 'inspection:delete')
+  }, [user])
+
+  // 统一的删除确认对话框（避免在 Dropdown 内触发无效）
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null)
+  const openDeleteConfirm = (id: number) => {
+    setDeleteTargetId(id)
+    setDeleteConfirmOpen(true)
+  }
+  const handleConfirmDelete = async () => {
+    if (!deleteTargetId) return
+    try {
+      await inspectionApi.delete(deleteTargetId)
+      if (selectedInspection?.id === deleteTargetId) {
+        onDetailOpenChange(false)
+      }
+      loadInspections()
+    } catch (e) {
+      log.error('删除点检记录失败', e)
+    } finally {
+      setDeleteConfirmOpen(false)
+      setDeleteTargetId(null)
+    }
+  }
   const [inspections, setInspections] = useState<InspectionLog[]>([])
   const [filters, setFilters] = useState<InspectionFilters>({})
   const [pagination, setPagination] = useState({
@@ -288,15 +332,35 @@ export function InspectionRecordsPage() {
       id: 'actions',
       header: '操作',
       cell: ({ row }) => (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => viewInspectionDetail(row.original.id)}
-          className="h-8 px-3"
-        >
-          <Eye className="h-4 w-4 mr-1" />
-          查看详情
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="icon" className="h-8 w-8">
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-40">
+            <DropdownMenuItem onClick={() => viewInspectionDetail(row.original.id)}>
+              <Eye className="h-4 w-4" />
+              <span>查看详情</span>
+            </DropdownMenuItem>
+            {canDelete && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-red-600 focus:text-red-600"
+                  onSelect={(e) => {
+                    // 在 Radix Dropdown 中使用 onSelect 触发受控弹窗
+                    e.preventDefault()
+                    openDeleteConfirm(row.original.id)
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  <span>删除</span>
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
       )
     }
   ]
@@ -304,6 +368,23 @@ export function InspectionRecordsPage() {
   useEffect(() => {
     loadFilterOptions()
   }, [])
+
+  // 确保加载用户权限（用于按钮显隐），若未包含则拉取 /auth/profile 以获取 permissions
+  useEffect(() => {
+    (async () => {
+      if (user && !(user as any).permissions) {
+        try {
+          const res = await authApi.getProfile()
+          if (res?.success && (res as any).data?.permissions) {
+            // 更新到本地用户信息
+            useAuthStore.getState().updateUser({ permissions: (res as any).data.permissions } as any)
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+    })()
+  }, [user?.id])
 
   useEffect(() => {
     loadInspections()
@@ -514,11 +595,62 @@ export function InspectionRecordsPage() {
         </CardContent>
       </Card>
 
+      {/* 统一的删除确认弹窗（受控） */}
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除点检记录</AlertDialogTitle>
+            <AlertDialogDescription>
+              此操作将永久删除该点检记录{selectedInspection && deleteTargetId === selectedInspection.id && selectedInspection.issue ? '及其关联隐患' : ''}，并尝试清理未被引用的上传图片。该操作不可撤销，确定继续吗？
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmDelete}>确认删除</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* 点检详情对话框 */}
       <Dialog open={detailDialogOpen} onOpenChange={onDetailOpenChange}>
         <DialogContent className="max-w-6xl w-[96vw] overflow-x-hidden">
           <DialogHeader>
-            <DialogTitle>点检记录详情</DialogTitle>
+            <div className="flex items-center justify-between">
+              <DialogTitle>点检记录详情</DialogTitle>
+              {selectedInspection && canDelete && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="destructive" size="sm">
+                      <Trash2 className="h-4 w-4 mr-1" /> 删除该记录
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>删除点检记录</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        此操作将永久删除该点检记录{selectedInspection.issue ? '及其关联隐患' : ''}，并尝试清理未被引用的上传图片。该操作不可撤销，确定继续吗？
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>取消</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={async () => {
+                          try {
+                            await inspectionApi.delete(selectedInspection.id)
+                            onDetailOpenChange(false)
+                            loadInspections()
+                          } catch (e) {
+                            log.error('删除点检记录失败', e)
+                          }
+                        }}
+                      >
+                        确认删除
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+            </div>
           </DialogHeader>
           
           {/* 加载中占位 */}

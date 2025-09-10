@@ -14,6 +14,15 @@ export interface User {
   fullName: string
   role: UserRole
   factoryId: number
+  // 细粒度权限（可选，来自 /auth/profile）
+  permissions?: Array<{
+    id?: number
+    code: string
+    name?: string
+    module?: string
+    category?: string
+    level?: number
+  }>
   // 多厂区支持：可访问的厂区ID列表与详情（后端兼容返回）
   factoryIds?: number[]
   factories?: Factory[]

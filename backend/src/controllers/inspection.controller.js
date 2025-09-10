@@ -468,6 +468,36 @@ class InspectionController {
       return ResponseHelper.internalError(res, error.message);
     }
   }
+
+  /**
+   * 删除点检记录（仅超级管理员）
+   * DELETE /api/inspections/:id
+   */
+  async deleteInspection(req, res) {
+    try {
+      const { id } = req.params;
+      const { user } = req;
+
+      if (!id || isNaN(parseInt(id))) {
+        return ResponseHelper.badRequest(res, '点检记录ID格式不正确');
+      }
+
+      const result = await this.inspectionService.deleteInspection(parseInt(id), user);
+
+      return ResponseHelper.success(res, result, '点检记录删除成功');
+    } catch (error) {
+      console.error('删除点检记录失败:', error);
+
+      if (error.message === '点检记录不存在') {
+        return ResponseHelper.notFound(res, error.message);
+      }
+      if (error.message === 'PERMISSION_DENIED' || error.message.includes('无权')) {
+        return ResponseHelper.forbidden(res, '无权删除点检记录');
+      }
+
+      return ResponseHelper.internalError(res, error.message);
+    }
+  }
 }
 
 // 导出控制器实例的方法，确保正确绑定this
@@ -490,4 +520,6 @@ module.exports = {
   appendInspectionImage: inspectionController.appendInspectionImage.bind(inspectionController),
   removeInspectionImage: inspectionController.removeInspectionImage.bind(inspectionController),
   finalizeInspection: inspectionController.finalizeInspection.bind(inspectionController)
+  ,
+  deleteInspection: inspectionController.deleteInspection.bind(inspectionController)
 };

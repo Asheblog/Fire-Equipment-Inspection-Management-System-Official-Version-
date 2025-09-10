@@ -121,6 +121,15 @@ class PermissionInitializer {
       level: 2, 
       sortOrder: 13 
     },
+    { 
+      code: 'inspection:delete', 
+      name: '删除点检记录', 
+      description: '删除设备点检记录及关联数据',
+      module: 'inspection', 
+      category: 'MODULE', 
+      level: 3, 
+      sortOrder: 14 
+    },
 
     // === 隐患管理模块 ===
     { 
