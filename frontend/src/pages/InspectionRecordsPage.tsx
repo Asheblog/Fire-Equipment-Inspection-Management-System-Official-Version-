@@ -614,8 +614,8 @@ export function InspectionRecordsPage() {
       {/* 点检详情对话框 */}
       <Dialog open={detailDialogOpen} onOpenChange={onDetailOpenChange}>
         <DialogContent className="max-w-6xl w-[96vw] overflow-x-hidden">
-          <DialogHeader>
-            <div className="flex items-center justify-between">
+          <DialogHeader className="pr-16 md:pr-20">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <DialogTitle>点检记录详情</DialogTitle>
               {selectedInspection && canDelete && (
                 <AlertDialog>
