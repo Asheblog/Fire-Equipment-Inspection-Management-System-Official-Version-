@@ -58,6 +58,8 @@ export const SystemSettingsPage: React.FC = () => {
   const [isModified, setIsModified] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isLoadingSettings, setIsLoadingSettings] = useState(true)
+  const [isCleaning, setIsCleaning] = useState(false)
+  const [sysStatus, setSysStatus] = useState<any>(null)
 
   // 如果不是超级管理员，重定向到未授权页面
   if (!isSuperAdmin()) {
@@ -129,8 +131,17 @@ export const SystemSettingsPage: React.FC = () => {
   }
 
   const handleSystemCleanup = async () => {
+    if (!Array.isArray(settings.cleanupCategories) || settings.cleanupCategories.length === 0) {
+      toast.warning?.('请先选择至少一种“清理内容”') || toast.info('请先选择至少一种“清理内容”')
+      return
+    }
+    setIsCleaning(true)
     try {
-      const resp: any = await api.post('/system-settings/cleanup/execute')
+      const payload = {
+        dataRetentionDays: settings.dataRetentionDays,
+        categories: settings.cleanupCategories
+      }
+      const resp: any = await api.post('/system-settings/cleanup/execute', payload)
       const data = resp?.data || resp
       const counts = data?.counts || {}
       const total = data?.total || 0
@@ -143,6 +154,8 @@ export const SystemSettingsPage: React.FC = () => {
         `${counts.errorLogs ? ` 错误${counts.errorLogs}` : ''}`)
     } catch (error: any) {
       toast.error(error.message || "执行系统清理时发生错误")
+    } finally {
+      setIsCleaning(false)
     }
   }
 
@@ -177,6 +190,18 @@ export const SystemSettingsPage: React.FC = () => {
       }
     })()
   }, [token, isSuperAdmin]);
+
+  // 加载系统状态（数据库健康、上传目录占用等）
+  useEffect(() => {
+    (async () => {
+      try {
+        const s: any = await api.get('/status', { baseURL: '' })
+        setSysStatus(s?.data || s)
+      } catch (e: any) {
+        log.warn('加载系统状态失败', e?.message || e)
+      }
+    })()
+  }, []);
 
   return (
     <PageContainer>
@@ -341,7 +366,7 @@ export const SystemSettingsPage: React.FC = () => {
                 <div className="text-sm text-gray-600">手动一键清理（使用以上清理内容与保留天数）</div>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
-                    <Button variant="outline" size="sm">
+                    <Button variant="outline" size="sm" disabled={isCleaning || settings.cleanupCategories.length === 0}>
                       <Trash2 className="h-4 w-4 mr-2" />
                       一键清理
                     </Button>
@@ -355,8 +380,8 @@ export const SystemSettingsPage: React.FC = () => {
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                       <AlertDialogCancel>取消</AlertDialogCancel>
-                      <AlertDialogAction onClick={handleSystemCleanup}>
-                        确认清理
+                      <AlertDialogAction onClick={handleSystemCleanup} disabled={isCleaning}>
+                        {isCleaning ? '清理中...' : '确认清理'}
                       </AlertDialogAction>
                     </AlertDialogFooter>
                   </AlertDialogContent>
@@ -499,7 +524,7 @@ export const SystemSettingsPage: React.FC = () => {
                   </p>
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
-                      <Button variant="outline" size="sm">
+                      <Button variant="outline" size="sm" disabled={isCleaning || settings.cleanupCategories.length === 0}>
                         <Trash2 className="h-4 w-4 mr-2" />
                         执行清理
                       </Button>
@@ -513,8 +538,8 @@ export const SystemSettingsPage: React.FC = () => {
                       </AlertDialogHeader>
                       <AlertDialogFooter>
                         <AlertDialogCancel>取消</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleSystemCleanup}>
-                          确认清理
+                        <AlertDialogAction onClick={handleSystemCleanup} disabled={isCleaning}>
+                          {isCleaning ? '清理中...' : '确认清理'}
                         </AlertDialogAction>
                       </AlertDialogFooter>
                     </AlertDialogContent>
@@ -526,11 +551,15 @@ export const SystemSettingsPage: React.FC = () => {
                   <div className="space-y-1">
                     <div className="flex justify-between items-center">
                       <span className="text-sm">数据库状态</span>
-                      <Badge variant="default">正常</Badge>
+                      <Badge variant={sysStatus?.database?.status === 'up' ? 'default' : 'secondary'}>
+                        {sysStatus?.database?.status === 'up' ? '正常' : '异常'}
+                      </Badge>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-sm">存储空间</span>
-                      <Badge variant="secondary">78% 已使用</Badge>
+                      <span className="text-sm">上传目录占用</span>
+                      <Badge variant="secondary">
+                        {(sysStatus?.upload?.totalSizeMB ?? 0) + ' MB / ' + (sysStatus?.upload?.totalFiles ?? 0) + ' 文件'}
+                      </Badge>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-sm">上次清理</span>

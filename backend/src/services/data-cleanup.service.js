@@ -61,10 +61,15 @@ class DataCleanupService {
    */
   async cleanupNow(options = null) {
     const settings = await this.getSettings();
-    const retentionDays = options?.dataRetentionDays || settings.dataRetentionDays || 365;
-    const categories = Array.isArray(options?.categories) && options.categories.length > 0
+    // 夹紧保留天数（30-3650）
+    const rawDays = options?.dataRetentionDays ?? settings.dataRetentionDays ?? 365;
+    const parsedDays = parseInt(rawDays, 10);
+    const retentionDays = Number.isFinite(parsedDays) ? Math.max(30, Math.min(3650, parsedDays)) : 365;
+    // 过滤清理类别为受支持集合
+    let categories = Array.isArray(options?.categories) && options.categories.length > 0
       ? options.categories
       : (settings.categories || []);
+    categories = categories.filter(c => this.allowedCategories.has(c));
 
     const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
 
@@ -154,4 +159,3 @@ class DataCleanupService {
 }
 
 module.exports = new DataCleanupService();
-

@@ -207,7 +207,9 @@ router.put('/cleanup', authenticate, authorize('*:*'), async (req, res) => {
 router.post('/cleanup/execute', authenticate, authorize('*:*'), async (req, res) => {
   try {
     const DataCleanupService = require('../services/data-cleanup.service');
-    const result = await DataCleanupService.cleanupNow();
+    // 支持一次性覆盖参数：若前端传入则按请求参数执行，不改数据库
+    const { dataRetentionDays, categories } = req.body || {};
+    const result = await DataCleanupService.cleanupNow({ dataRetentionDays, categories });
     return res.json({ success: true, data: result });
   } catch (e) {
     return res.status(500).json({ success: false, message: e.message });

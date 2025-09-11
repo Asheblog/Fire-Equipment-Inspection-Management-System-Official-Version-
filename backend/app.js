@@ -8,6 +8,8 @@ const path = require('path');
 const compression = require('compression');
 const morgan = require('morgan');
 require('dotenv').config();
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
 
 // 运行期文件日志（生产环境启用）
 const runtimeLogger = require('./src/utils/runtime.logger');
@@ -112,20 +114,38 @@ app.post('/client-logs', (req, res) => {
   }
 });
 
-// 系统状态路由 (独立于主API路由)
-app.get('/status', (req, res) => {
+/**
+ * 系统状态路由 (独立于主API路由)
+ * - 返回服务运行信息、数据库健康状态、上传目录占用统计与安全模块开关
+ */
+app.get('/status', async (req, res) => {
   const uploadStats = fileUpload.getUploadStats();
-  
+
+  const serverInfo = {
+    status: 'running',
+    uptime: process.uptime(),
+    memory: process.memoryUsage(),
+    version: require('./package.json').version,
+    environment: process.env.NODE_ENV || 'development'
+  };
+
+  // 数据库健康检查（轻量查询）
+  const database = { status: 'down' };
+  const t0 = Date.now();
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    database.status = 'up';
+    database.latencyMs = Date.now() - t0;
+  } catch (e) {
+    database.status = 'down';
+    database.error = e.message;
+  }
+
   res.json({
     success: true,
     data: {
-      server: {
-        status: 'running',
-        uptime: process.uptime(),
-        memory: process.memoryUsage(),
-        version: require('./package.json').version,
-        environment: process.env.NODE_ENV || 'development'
-      },
+      server: serverInfo,
+      database,
       upload: uploadStats,
       security: {
         authEnabled: true,
@@ -192,12 +212,20 @@ if (process.env.NODE_ENV === 'production') {
   }, cleanupInterval);
 }
 
-// 数据清理计划任务（读取系统设置，默认关闭；每日3:30执行）
-try {
-  const DataCleanupService = require('./src/services/data-cleanup.service');
-  DataCleanupService.startScheduler();
-} catch (e) {
-  console.warn('[DataCleanup] Scheduler init failed:', e.message);
+/**
+ * 数据清理计划任务（读取系统设置，默认关闭；每日3:30执行）
+ * 通过环境变量 SCHEDULER_ENABLED 控制是否启动，避免多实例重复调度。
+ * 如需启用：SCHEDULER_ENABLED=1 或 true
+ */
+if (process.env.SCHEDULER_ENABLED === '1' || process.env.SCHEDULER_ENABLED === 'true') {
+  try {
+    const DataCleanupService = require('./src/services/data-cleanup.service');
+    DataCleanupService.startScheduler();
+  } catch (e) {
+    console.warn('[DataCleanup] Scheduler init failed:', e.message);
+  }
+} else {
+  console.log('[DataCleanup] Scheduler disabled by env SCHEDULER_ENABLED');
 }
 
 // ===== 服务器启动 =====

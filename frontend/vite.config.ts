@@ -122,6 +122,11 @@ export default defineConfig({
         changeOrigin: true,
         secure: false, // 允许自签名证书
       },
+      '/status': {
+        target: 'http://localhost:3001', // 直连后端 /status，避免在开发环境下走前端源导致404
+        changeOrigin: true,
+        secure: false
+      },
       '/uploads': {
         target: 'http://localhost:3001', // 后端始终使用HTTP，避免SSL协议不匹配
         changeOrigin: true,
