@@ -1,4 +1,11 @@
 # 更新日志
+
+## [Unreleased] - 2025-09-11
+
+### 新增
+- 新增 AGENTS.md 作为仓库贡献指南。
+- 在 README.md 中添加 AGENTS.md 链接。
+- 在 AGENTS.md 中明确“中文沟通与文档同步更新（README.md/CHANGELOG.md）”要求，并在 README.md 同步说明。
 > 注：历史记录中提及的 deploy-simple.js / secure-deploy.js 已统一为 deploy.js（现行脚本名）。
 
 ## [未发布] - 2025-09-10（系统设置：数据管理）

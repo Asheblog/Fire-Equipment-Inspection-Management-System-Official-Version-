@@ -16,6 +16,8 @@
 
 3.**请务必更新backend/.env文件中的JWT_SECRET、JWT_REFRESH_SECRET，越复杂越好，不要使用默认值！**
 
+4.**贡献与开发规范**：请阅读根目录 `AGENTS.md` 了解项目结构、开发/测试命令、编码与提交流程。
+5.**沟通与文档同步**：所有沟通（Issue/PR/提交说明等）需使用中文；任何变更需同步更新 `README.md` 与 `CHANGELOG.md`。
 
 ## 🎯 系统概述
 
