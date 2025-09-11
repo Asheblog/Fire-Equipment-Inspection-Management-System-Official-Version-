@@ -1284,6 +1284,78 @@ class EquipmentService {
       throw new Error('批量导入器材失败');
     }
   }
+
+  /**
+   * 按编号片段模糊搜索器材
+   * @param {string} q - 搜索关键词（可为完整URL/纯码/片段）
+   * @param {number} limit - 返回数量上限（1~50）
+   * @param {number|number[]|null} userFactoryId - 厂区权限过滤
+   * @returns {Promise<Array>} 搜索结果
+   */
+  async searchByCode(q, limit = 10, userFactoryId = null) {
+    try {
+      // 允许输入完整URL或路径，提取真实二维码片段
+      let keyword = '';
+      try {
+        keyword = QRCodeGenerator.extractQRCodeFromURL(String(q || ''));
+      } catch (_) {
+        keyword = String(q || '');
+      }
+      keyword = keyword.trim();
+
+      if (!keyword || keyword.length < 3) {
+        throw new Error('搜索关键词过短');
+      }
+
+      // 厂区与状态过滤
+      const whereBase = {
+        status: { not: 'SCRAPPED' }
+      };
+      if (Array.isArray(userFactoryId) && userFactoryId.length > 0) {
+        whereBase.factoryId = { in: userFactoryId };
+      } else if (userFactoryId) {
+        whereBase.factoryId = userFactoryId;
+      }
+
+      // 组合 OR 条件：contains + 针对短片段的 endsWith（尾段校验码命中）
+      const upper = keyword.toUpperCase();
+      const or = [
+        { qrCode: { contains: keyword } }
+      ];
+      if (upper !== keyword) {
+        or.push({ qrCode: { contains: upper } });
+      }
+      if (upper.length <= 6) {
+        or.push({ qrCode: { endsWith: upper } });
+        if (upper !== keyword) {
+          or.push({ qrCode: { endsWith: keyword } });
+        }
+      }
+
+      const take = Math.min(Math.max(parseInt(limit) || 10, 1), 50);
+
+      const items = await this.prisma.equipment.findMany({
+        where: { ...whereBase, OR: or },
+        take,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          name: true,
+          qrCode: true,
+          location: true,
+          createdAt: true,
+          equipmentType: {
+            select: { id: true, name: true }
+          }
+        }
+      });
+
+      return items;
+    } catch (error) {
+      console.error('搜索器材失败:', error);
+      throw error;
+    }
+  }
 }
 
 module.exports = EquipmentService;

@@ -6,6 +6,7 @@ import { QRCodeScanner } from '@/components/QRCodeScanner'
 import { extractQrCode } from '@/utils/qrCode'
 import { equipmentApi, inspectionApi } from '@/api'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { PageContainer } from '@/components/layout'
@@ -17,7 +18,8 @@ import {
   LogOut, 
   Settings,
   Activity,
-  Clock
+  Clock,
+  Search
 } from 'lucide-react'
 
 type MonthlyProgress = {
@@ -42,6 +44,13 @@ export const MobileDashboard: React.FC = () => {
     }
   )
   const pendingRef = useRef<HTMLDivElement | null>(null)
+
+  // 手动编号搜索
+  type EquipmentSearchItem = { id: number; name: string; qrCode: string; location: string; equipmentType?: { id: number; name: string } }
+  const [codeQuery, setCodeQuery] = useState('')
+  const [searching, setSearching] = useState(false)
+  const [searchResults, setSearchResults] = useState<EquipmentSearchItem[]>([])
+  const [searchError, setSearchError] = useState('')
 
   useEffect(() => {
     const load = async () => {
@@ -90,6 +99,48 @@ export const MobileDashboard: React.FC = () => {
     log.error('扫描错误', error)
   }
 
+  const doSearch = async () => {
+    setSearchError('')
+    const keyword = (codeQuery || '').trim()
+    if (keyword.length < 3) {
+      setSearchResults([])
+      setSearchError('请至少输入3个字符，例如后四位 B77A')
+      return
+    }
+    try {
+      setSearching(true)
+      const res = await equipmentApi.searchByCode(keyword.toUpperCase(), 10)
+      if (res.success) {
+        setSearchResults((res.data as any) || [])
+        if (((res.data as any[]) || []).length === 0) {
+          setSearchError('未找到匹配器材，请核对编号片段')
+        }
+      } else {
+        setSearchResults([])
+        setSearchError(res.message || '搜索失败')
+      }
+    } catch (e: any) {
+      setSearchResults([])
+      setSearchError(e?.message || '搜索失败')
+    } finally {
+      setSearching(false)
+    }
+  }
+
+  const highlight = (text: string, needle: string) => {
+    if (!needle) return text
+    const t = text || ''
+    const i = t.toUpperCase().indexOf(needle.toUpperCase())
+    if (i < 0) return t
+    return (
+      <>
+        {t.slice(0, i)}
+        <mark className="bg-yellow-200 px-0.5 rounded-sm">{t.slice(i, i + needle.length)}</mark>
+        {t.slice(i + needle.length)}
+      </>
+    )
+  }
+
   const handleLogout = async () => {
     logout()
     navigate('/login')
@@ -120,36 +171,8 @@ export const MobileDashboard: React.FC = () => {
       </header>
 
       <PageContainer variant="mobile">
-        {/* 本月巡检进度 */}
-        <Card className="mb-4">
-          <CardHeader>
-            <CardTitle className="text-lg">本月巡检进度</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {progress ? (
-              <>
-                <div className="text-sm text-muted-foreground">{progress.month}</div>
-                <div className="flex items-center justify-between">
-                  <div>总进度</div>
-                  <div className="text-sm">{progress.completed} / {progress.total}</div>
-                </div>
-                <div className="grid grid-cols-1 gap-2">
-                  {(progress.factories || []).map((f) => (
-                    <div key={f.factoryId} className="flex items-center justify-between border rounded p-2">
-                      <div>
-                        <div className="font-medium text-sm">{f.factoryName}</div>
-                        <div className="text-xs text-muted-foreground">已完成 {f.completed} / {f.total}，未完成 {f.pending}</div>
-                      </div>
-                      <Button size="sm" variant="outline" onClick={() => openPending(f.factoryId)}>查看未完成</Button>
-                    </div>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <div className="text-sm text-muted-foreground">加载中...</div>
-            )}
-          </CardContent>
-        </Card>
+
+        
         {/* 用户信息卡片 */}
         <Card>
           <CardContent className="p-4">
@@ -180,6 +203,89 @@ export const MobileDashboard: React.FC = () => {
           onScanError={handleScanError}
           className="mb-4"
         />
+
+        {/* 手动输入编号搜索（光线差时使用） */}
+        <Card className="mb-4">
+          <CardHeader>
+            <CardTitle className="text-lg">手动输入编号</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center space-x-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                <Input
+                  placeholder="输入器材编号片段，如 B77A 或 FIRE-..."
+                  value={codeQuery}
+                  onChange={(e) => setCodeQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && doSearch()}
+                  className="pl-9"
+                  inputMode="text"
+                  autoCapitalize="characters"
+                />
+              </div>
+              <Button onClick={doSearch} disabled={searching || (codeQuery.trim().length < 3)}>
+                {searching ? '搜索中...' : '搜索'}
+              </Button>
+            </div>
+            <div className="mt-2 text-xs text-muted-foreground">
+              无法扫码时可输入编号片段（建议输入后四位校验段，如 B77A）
+            </div>
+            {searchError && (
+              <div className="mt-2 text-xs text-red-600">{searchError}</div>
+            )}
+            {searchResults.length > 0 && (
+              <div className="mt-3 space-y-2">
+                {searchResults.map(item => (
+                  <button
+                    key={item.id}
+                    className="w-full text-left border rounded p-2 hover:bg-gray-50"
+                    onClick={() => navigate(`/m/inspection/${encodeURIComponent(item.qrCode)}`)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="font-medium">{item.name}</div>
+                      <div className="text-xs text-gray-500">{item.equipmentType?.name}</div>
+                    </div>
+                    <div className="text-xs text-gray-600">位置：{item.location}</div>
+                    <div className="font-mono text-xs break-all">
+                      编号：{highlight(item.qrCode, codeQuery.trim())}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* 本月巡检进度 */}
+        <Card className="mb-4">
+          <CardHeader>
+            <CardTitle className="text-lg">本月巡检进度</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {progress ? (
+              <>
+                <div className="text-sm text-muted-foreground">{progress.month}</div>
+                <div className="flex items-center justify-between">
+                  <div>总进度</div>
+                  <div className="text-sm">{progress.completed} / {progress.total}</div>
+                </div>
+                <div className="grid grid-cols-1 gap-2">
+                  {(progress.factories || []).map((f) => (
+                    <div key={f.factoryId} className="flex items-center justify-between border rounded p-2">
+                      <div>
+                        <div className="font-medium text-sm">{f.factoryName}</div>
+                        <div className="text-xs text-muted-foreground">已完成 {f.completed} / {f.total}，未完成 {f.pending}</div>
+                      </div>
+                      <Button size="sm" variant="outline" onClick={() => openPending(f.factoryId)}>查看未完成</Button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="text-sm text-muted-foreground">加载中...</div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* 快捷操作 */}
         <Card>

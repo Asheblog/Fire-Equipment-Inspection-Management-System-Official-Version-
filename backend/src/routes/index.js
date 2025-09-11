@@ -238,6 +238,7 @@ router.get('/', (req, res) => {
         detail: 'GET /api/equipments/:id',
         update: 'PUT /api/equipments/:id',
         delete: 'DELETE /api/equipments/:id',
+        search: 'GET /api/equipments/search',
         qrCode: 'GET /api/equipments/qr/:qrCode',
         types: 'GET /api/equipments/types',
         stats: 'GET /api/equipments/stats',

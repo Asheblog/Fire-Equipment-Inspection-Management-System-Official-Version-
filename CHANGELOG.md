@@ -6,6 +6,8 @@
 - 新增 AGENTS.md 作为仓库贡献指南。
 - 在 README.md 中添加 AGENTS.md 链接。
 - 在 AGENTS.md 中明确“中文沟通与文档同步更新（README.md/CHANGELOG.md）”要求，并在 README.md 同步说明。
+- 移动端首页新增“器材编号模糊搜索”功能：在光线不足无法扫码时，可输入编号片段（如后四位 B77A）搜索并直达点检。
+- 后端新增接口：`GET /api/equipments/search?q=片段&limit=10`，按 `qrCode` 片段模糊匹配（短片段优先匹配尾部校验段），结果按厂区权限过滤。
 > 注：历史记录中提及的 deploy-simple.js / secure-deploy.js 已统一为 deploy.js（现行脚本名）。
 
 ## [未发布] - 2025-09-10（系统设置：数据管理）

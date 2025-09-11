@@ -62,6 +62,10 @@ export const equipmentApi = {
   // 根据二维码获取器材信息
   getByQR: (qrCode: string): Promise<ApiResponse<Equipment>> =>
     api.get(`/equipments/qr/${qrCode}`),
+  
+  // 按编号片段模糊搜索（支持末尾校验段/URL）
+  searchByCode: (q: string, limit: number = 10): Promise<ApiResponse<Array<{ id: number; name: string; qrCode: string; location: string; equipmentType: EquipmentType }>>> =>
+    api.get('/equipments/search', { params: { q, limit } }),
     
   // 根据二维码获取位置下的所有器材和检查项 (新增)
   getLocationEquipments: (qrCode: string): Promise<ApiResponse<{

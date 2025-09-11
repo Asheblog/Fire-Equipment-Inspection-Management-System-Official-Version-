@@ -638,6 +638,38 @@ class EquipmentController {
   }
 
   /**
+   * 按编号片段模糊搜索器材
+   * GET /api/equipments/search?q=XXX&limit=10
+   */
+  async searchByCode(req, res) {
+    try {
+      const { q, limit } = req.query;
+      const { user, dataFilter } = req;
+
+      if (!q || typeof q !== 'string' || q.trim().length < 3) {
+        return ResponseHelper.badRequest(res, '搜索关键词至少3个字符');
+      }
+
+      let take = parseInt(limit, 10);
+      if (isNaN(take)) take = 10;
+      if (take < 1) take = 1;
+      if (take > 50) take = 50;
+
+      const userFactoryId = (user?.role === 'SUPER_ADMIN')
+        ? null
+        : (Array.isArray(user?.factoryIds) && user.factoryIds.length > 0
+            ? user.factoryIds
+            : (dataFilter ? (dataFilter.factoryIds || (dataFilter.factoryId ? [dataFilter.factoryId] : null)) : null));
+
+      const items = await this.equipmentService.searchByCode(String(q), take, userFactoryId);
+      return ResponseHelper.success(res, items, '搜索成功');
+    } catch (error) {
+      console.error('器材编号搜索失败:', error);
+      return ResponseHelper.internalError(res, error.message);
+    }
+  }
+
+  /**
    * 批量导入器材
    * POST /api/equipments/batch-import
    */
@@ -826,4 +858,6 @@ module.exports = {
   getEquipmentStats: equipmentController.getEquipmentStats.bind(equipmentController),
   batchImportEquipments: equipmentController.batchImportEquipments.bind(equipmentController),
   generateQRImage: equipmentController.generateQRImage.bind(equipmentController)
+  ,
+  searchByCode: equipmentController.searchByCode.bind(equipmentController)
 };

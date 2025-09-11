@@ -52,6 +52,9 @@ router.put('/types/:id/checklist/reorder', equipmentController.reorderChecklistT
 // 获取器材统计信息
 router.get('/stats', equipmentController.getEquipmentStats);
 
+// 编号模糊搜索（支持末尾校验段/完整URL提取）
+router.get('/search', equipmentController.searchByCode);
+
 // 批量导入器材 (需要管理员权限)
 router.post('/batch-import', equipmentController.batchImportEquipments);
 
