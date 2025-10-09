@@ -29,6 +29,8 @@ export interface User {
   factory?: Factory
   isActive: boolean
   createdAt: string
+  // 可选：上次修改密码时间（后端暂未提供，预留以便未来接入审计日志）
+  lastPasswordChangedAt?: string
 }
 
 // 厂区信息类型

@@ -132,7 +132,7 @@ class AuthMiddleware {
 
       console.log('用户验证成功:', user.username);
 
-      // 将用户信息附加到请求对象
+      // 将用户信息附加到请求对象（补齐 isActive/createdAt，供 /auth/profile 使用）
       req.user = {
         id: user.id,
         username: user.username,
@@ -140,6 +140,8 @@ class AuthMiddleware {
         role: user.role,
         factoryId: user.factoryId,
         factory: user.factory,
+        isActive: user.isActive,
+        createdAt: user.createdAt,
         permissions: this.getUserPermissions(user.role),
         tokenId: decoded.jti
       };
@@ -378,6 +380,8 @@ class AuthMiddleware {
             role: user.role,
             factoryId: user.factoryId,
             factory: user.factory,
+            isActive: user.isActive,
+            createdAt: user.createdAt,
             permissions: this.getUserPermissions(user.role),
             tokenId: decoded.jti
           };

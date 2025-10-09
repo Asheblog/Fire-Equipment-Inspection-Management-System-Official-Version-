@@ -465,7 +465,10 @@ export const ProfilePage: React.FC = () => {
                   </div>
                   <Separator />
                   <p className="text-sm text-gray-600">
-                    上次密码修改时间：{formatDateTime(user.createdAt)}
+                    上次密码修改时间：
+                    {user.lastPasswordChangedAt 
+                      ? formatDateTime(user.lastPasswordChangedAt as any)
+                      : '暂无数据'}
                   </p>
                 </div>
               )}

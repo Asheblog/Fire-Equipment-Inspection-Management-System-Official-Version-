@@ -228,7 +228,10 @@ router.get('/profile',
           role: user.role,
           factoryId: user.factoryId,
           factory: user.factory,
-          permissions: user.permissions
+          permissions: user.permissions,
+          // 补齐账户状态与创建时间，供前端“基本信息”展示
+          isActive: user.isActive === undefined ? true : user.isActive,
+          createdAt: user.createdAt || null
         }
       });
     } catch (error) {
