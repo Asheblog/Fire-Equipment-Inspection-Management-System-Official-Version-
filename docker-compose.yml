@@ -1,0 +1,23 @@
+version: "3.9"
+
+services:
+  app:
+    build:
+      context: .
+    container_name: fire-safety-system
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      # 如需自定义数据库位置或域名等，请在 backend/.env 配置后挂载文件：
+      # - DOMAIN=example.com
+      # - DATABASE_URL=file:../data/fire_safety.db
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./backend/data:/app/backend/data
+      - ./backend/uploads:/app/backend/uploads
+      - ./backend/logs:/app/backend/logs
+      # 可选：挂载自定义环境文件（若文件存在再启用）
+      # - ./backend/.env:/app/backend/.env:ro
+    restart: unless-stopped
+

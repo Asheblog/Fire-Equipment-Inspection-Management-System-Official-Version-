@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### 新增
+- 🐳 新增官方 Docker 部署支持：
+  - 新增 `Dockerfile` 与 `docker-compose.yml`，容器内通过 `npm start` 自动完成依赖安装、数据库初始化（`prisma migrate deploy` 或 `db push`，SQLite 首次自动 `seed`）、前端构建与后端启动。
+  - 新增 `.dockerignore`，减少构建上下文体积。
+- 🛠️ 生产启动整合：`npm start`（脚本 `scripts/start-all.js`）纳入数据库初始化逻辑，确保无库场景也能自动完成初始化并可用。
+
+### 变更
+- 🔧 后端服务显式绑定 `0.0.0.0`（`backend/app.js`），便于容器与服务器外部访问。
+- 🧹 移除 PM2 相关脚本与逻辑（删除 `start-pm2.js`，清理 `deploy.js` 中的 PM2 配置）。
+
+### 文档
+- 📝 更新 `README.md`：新增 Docker 使用说明；移除 PM2 相关段落；补充一键生产启动脚本说明。
+
 ## [1.2.0] - 2025-09-11
 
 ### 新增

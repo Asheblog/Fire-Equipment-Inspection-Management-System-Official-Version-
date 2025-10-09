@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "node dev.js",
     "deploy": "node deploy.js",
-    "sync": "node sync-remote.js"
+    "sync": "node sync-remote.js",
+    "start": "node scripts/start-all.js"
   },
   "keywords": [
     "fire-safety",

@@ -10,7 +10,7 @@
  *  - Prisma 迁移安全执行 (migrate deploy / db push)
  *  - 可选种子（新库自动 / 旧库经确认或参数）
  *  - CORS 自动加入生产域名（https://DOMAIN）
- *  - PM2 可选管理（存在即 reload，不重复 start）
+ *  -（已移除）PM2 管理
  *  - 单端口部署，HTTPS 建议由 Nginx/Caddy 等反代终止
  *
  * 使用示例：
@@ -21,8 +21,7 @@
  *   --domain / DEPLOY_DOMAIN              生产域名 (必填，禁止 localhost)
  *   --port / DEPLOY_PORT                  单一服务端口 (默认 3001)
  *   --db-path / DEPLOY_DB_PATH            SQLite 相对路径（file: 之后部分）
- *   --pm2 / DEPLOY_PM2                    是否使用 PM2 (true/false)
- *   --pm2-name / DEPLOY_PM2_NAME          PM2 名称
+ *   （PM2 相关参数已移除）
  *   --seed / DEPLOY_RUN_SEED              是否执行种子
  */
 
@@ -167,13 +166,7 @@ async function main() {
     runSeed = /^(y|yes)$/i.test(ans);
   }
 
-  // PM2
-  let usePm2 = /^(true|y|yes|1)$/i.test(getFlagOrEnv('pm2','DEPLOY_PM2', currentEnv.PM2_ENABLED || 'true'));
-  if (!nonInteractive && !acceptDefaults) {
-    const ans = await prompt('是否使用 PM2 进程管理? (Y/n)', usePm2 ? 'y':'n');
-    usePm2 = /^(y|yes)$/i.test(ans || 'y');
-  }
-  const pm2AppName = getFlagOrEnv('pm2-name','DEPLOY_PM2_NAME', currentEnv.PM2_APP_NAME || 'fire-safety-system');
+  // PM2 相关逻辑已移除
 
   function randomSecret(bytes=32) { return crypto.randomBytes(bytes).toString('hex'); }
   const jwtSecret = currentEnv.JWT_SECRET || randomSecret(32);
@@ -348,30 +341,7 @@ async function main() {
   const dbDir = path.dirname(dbAbsolute);
   if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive:true });
 
-  // PM2 管理
-  if (usePm2) {
-    log('\n🌀 配置 / 启动 PM2', 'blue');
-    if (!commandExists('pm2')) {
-      log('⚠️  未检测到全局 pm2，请先安装: npm install -g pm2','yellow');
-    } else {
-      try {
-        const listResult = spawnSync('pm2',['ls'], { encoding:'utf8' });
-        const exists = listResult.stdout && listResult.stdout.includes(pm2AppName);
-        if (exists) {
-          log(`🔁 已存在 PM2 应用 ${pm2AppName} → reload`, 'blue');
-          safeExec(`pm2 reload ${pm2AppName}`);
-        } else {
-          log(`🚀 启动 PM2 应用: ${pm2AppName}`, 'blue');
-          safeExec(`pm2 start app.js --name ${pm2AppName} --time`, { cwd: backendDir });
-        }
-        safeExec('pm2 save');
-      } catch (e) {
-        log('⚠️  PM2 操作失败（继续执行）：' + e.message, 'yellow');
-      }
-    }
-  } else {
-    log('⏭️  跳过 PM2。','gray');
-  }
+  // PM2 管理已删除
 
   // 摘要
   log('\n✅ 部署流程完成 (deploy-simple)', 'green');

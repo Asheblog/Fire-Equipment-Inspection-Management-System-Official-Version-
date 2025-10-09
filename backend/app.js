@@ -270,7 +270,7 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 // 启动服务器
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log('\n🚀 消防器材点检管理系统启动成功');
   console.log(`📍 服务器地址: http://localhost:${PORT}`);
   console.log(`🔒 安全模块: 已启用`);
