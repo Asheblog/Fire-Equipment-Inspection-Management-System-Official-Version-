@@ -167,6 +167,11 @@ async function main() {
   // 3) 构建前端
   log('🎨 前端构建（vite build）', 'info');
   await run(npmCmd, ['run', 'build'], { cwd: frontendDir, env: baseEnv }, 10 * 60 * 1000);
+  // 构建产物健全性检查
+  const builtIndex = path.join(backendDir, 'public', 'index.html');
+  if (!fs.existsSync(builtIndex)) {
+    throw new Error('前端构建产物缺失：backend/public/index.html 不存在。请检查前端构建日志与写入权限。');
+  }
 
   // 4) 后端启动（长时运行，设置超长超时避免卡死）
   log('🚀 启动后端服务（生产）', 'info');

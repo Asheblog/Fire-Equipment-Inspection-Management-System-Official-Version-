@@ -70,7 +70,13 @@ app.use('/uploads',
 );
 
 // 前端静态文件服务 - 直接服务到根路径
-app.use(express.static(path.join(__dirname, 'public')));
+// 若存在构建产物，优先提供 /assets 资源（设置长缓存），其余走根静态
+const publicDir = path.join(__dirname, 'public');
+app.use('/assets', express.static(path.join(publicDir, 'assets'), {
+  immutable: true,
+  maxAge: process.env.NODE_ENV === 'production' ? '30d' : 0
+}));
+app.use(express.static(publicDir));
 
 // ===== API路由配置 =====
 
@@ -183,10 +189,17 @@ app.get('/api-info', (req, res) => {
   });
 });
 
-// SPA回退路由 - 所有非API路径都返回React应用
+// SPA回退路由 - 所有非API/资源路径都返回React应用
 app.get('*', (req, res) => {
   // 检查是否是API路径或状态路径，如果是则不处理（让其404）
-  if (req.path.startsWith('/api') || req.path.startsWith('/status') || req.path.startsWith('/uploads')) {
+  if (
+    req.path.startsWith('/api') ||
+    req.path.startsWith('/status') ||
+    req.path.startsWith('/uploads') ||
+    req.path.startsWith('/assets') ||
+    req.path === '/favicon.ico' ||
+    req.path === '/robots.txt'
+  ) {
     return res.status(404).json({ 
       success: false, 
       message: 'API endpoint not found',
@@ -195,7 +208,7 @@ app.get('*', (req, res) => {
   }
   
   // 对于所有其他路径，返回React应用的index.html
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  res.sendFile(path.join(publicDir, 'index.html'));
 });
 
 // ===== 应用错误处理中间件 =====
