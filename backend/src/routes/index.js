@@ -230,7 +230,8 @@ router.get('/', (req, res) => {
         refresh: 'POST /api/auth/refresh',
         logout: 'POST /api/auth/logout',
         profile: 'GET /api/auth/profile',
-        changePassword: 'PUT /api/auth/change-password'
+        // 修正：实际路由为 POST /api/auth/change-password
+        changePassword: 'POST /api/auth/change-password'
       },
       equipments: {
         list: 'GET /api/equipments',

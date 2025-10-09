@@ -2,6 +2,15 @@ const Joi = require('joi');
 const { formatJoiErrors } = require('../utils/validation-error.formatter');
 const ResponseHelper = require('../utils/response.helper');
 
+// 密码字段白名单：这些字段将跳过 XSS 清理，避免密码字符被改写
+// 仅用于输入清理阶段；验证与加密逻辑保持不变
+const PASSWORD_FIELD_WHITELIST = new Set([
+  'password',
+  'oldPassword',
+  'newPassword',
+  'confirmPassword'
+]);
+
 /**
  * 消防器材点检系统 - 输入验证配置
  * 
@@ -507,7 +516,11 @@ class InputValidator {
         for (const key in obj) {
           if (obj.hasOwnProperty(key)) {
             if (typeof obj[key] === 'string') {
-              obj[key] = this.sanitizeHtml(obj[key]);
+              // 对密码相关字段跳过清理，避免将用户密码中的特殊字符替换为实体
+              // 说明：此处仅影响输入清理，不降低后续 Joi 校验与服务端强度校验的安全性
+              if (!PASSWORD_FIELD_WHITELIST.has(key)) {
+                obj[key] = this.sanitizeHtml(obj[key]);
+              }
             } else if (typeof obj[key] === 'object' && obj[key] !== null) {
               sanitizeObject(obj[key]);
             }
