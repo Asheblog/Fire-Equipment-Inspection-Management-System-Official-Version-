@@ -231,10 +231,17 @@ export const UserManagementPage: React.FC = () => {
 
   // 重置密码
   const handleResetPassword = async () => {
-    if (!selectedUser || !newPassword) return
+    if (!selectedUser) return
+    const pwd = newPassword || ''
+    // 前端一致性校验：与后端强度规则对齐（≥8，含大写/小写/数字/特殊字符）
+    const strongPattern = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]).{8,}$/
+    if (!strongPattern.test(pwd)) {
+      toast.error('新密码至少8位，且需包含大写字母、小写字母、数字和特殊字符')
+      return
+    }
 
     try {
-      await userApi.resetPassword(selectedUser.id, newPassword)
+      await userApi.resetPassword(selectedUser.id, pwd)
       toast.success('密码重置成功')
       setShowResetPasswordDialog(false)
       setSelectedUser(null)
@@ -981,7 +988,7 @@ export const UserManagementPage: React.FC = () => {
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 className="col-span-3"
-                placeholder="请输入新密码"
+                placeholder="请输入新密码（至少8位，需包含大小写字母、数字和特殊字符）"
               />
             </div>
           </div>

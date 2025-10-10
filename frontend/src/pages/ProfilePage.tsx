@@ -67,10 +67,10 @@ export const ProfilePage: React.FC = () => {
     
     if (!passwordData.newPassword) {
       errors.newPassword = '请输入新密码'
-    } else if (passwordData.newPassword.length < 6) {
-      errors.newPassword = '密码至少6个字符'
-    } else if (!/^(?=.*[a-zA-Z])(?=.*\d)/.test(passwordData.newPassword)) {
-      errors.newPassword = '密码必须包含字母和数字'
+    } else if (passwordData.newPassword.length < 8) {
+      errors.newPassword = '密码至少8个字符'
+    } else if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{}|;:,.<>?])/.test(passwordData.newPassword)) {
+      errors.newPassword = '新密码必须包含大小写字母、数字和特殊字符'
     }
     
     if (!passwordData.confirmPassword) {
@@ -117,7 +117,8 @@ export const ProfilePage: React.FC = () => {
     try {
       const response = await authApi.changePassword({
         oldPassword: passwordData.oldPassword,
-        newPassword: passwordData.newPassword
+        newPassword: passwordData.newPassword,
+        confirmPassword: passwordData.confirmPassword
       })
 
       if (response.success) {
@@ -377,7 +378,7 @@ export const ProfilePage: React.FC = () => {
                         type={showNewPassword ? "text" : "password"}
                         value={passwordData.newPassword}
                         onChange={(e) => setPasswordData(prev => ({...prev, newPassword: e.target.value}))}
-                        placeholder="请输入新密码（至少6位，包含字母和数字）"
+                        placeholder="请输入新密码（至少8位，需包含大小写字母、数字和特殊字符）"
                         className={formErrors.newPassword ? 'border-red-500' : ''}
                       />
                       <Button
@@ -459,8 +460,8 @@ export const ProfilePage: React.FC = () => {
               ) : (
                 <div className="space-y-4">
                   <div className="text-sm text-gray-500">
-                    <p>• 密码至少6个字符</p>
-                    <p>• 必须包含字母和数字</p>
+                    <p>• 密码至少8个字符</p>
+                    <p>• 必须包含大写字母、小写字母、数字和特殊字符</p>
                     <p>• 建议定期更新密码以确保账户安全</p>
                   </div>
                   <Separator />
