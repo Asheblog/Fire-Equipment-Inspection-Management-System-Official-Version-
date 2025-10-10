@@ -50,8 +50,36 @@ function run(cmd, args, options = {}, timeoutMs = 0) {
   });
 }
 
+/**
+ * 保守依赖安装策略（跨平台、可跳过）
+ * - 若检测到 node_modules 已存在且非空，则默认跳过安装，加速重启场景（如 1Panel 挂载持久目录）。
+ * - 如需强制重新安装，可设置环境变量 FORCE_INSTALL=1。
+ * - 若需严格对齐 lock，可自行删除 node_modules 触发重新安装，或设置 FORCE_INSTALL。
+ */
 async function ensureInstall(cwd) {
-  const hasLock = fs.existsSync(path.join(cwd, 'package-lock.json'));
+  const pkgPath = path.join(cwd, 'package.json');
+  const lockPath = path.join(cwd, 'package-lock.json');
+  const modulesDir = path.join(cwd, 'node_modules');
+  const hasPkg = fs.existsSync(pkgPath);
+  const hasLock = fs.existsSync(lockPath);
+  const hasModules = fs.existsSync(modulesDir);
+  let modulesNonEmpty = false;
+  try {
+    modulesNonEmpty = hasModules && fs.readdirSync(modulesDir).length > 0;
+  } catch {
+    modulesNonEmpty = false;
+  }
+
+  // 允许通过环境变量强制安装
+  const forceInstall = ['1', 'true', 'yes'].includes(String(process.env.FORCE_INSTALL || '').toLowerCase());
+
+  // 若 node_modules 已存在且非空，且未强制安装，则跳过
+  if (hasPkg && modulesNonEmpty && !forceInstall) {
+    log(`⏭️  检测到已存在 node_modules，跳过依赖安装 @ ${cwd}`, 'warn');
+    return;
+  }
+
+  // 优先使用 npm ci（若存在 package-lock.json），失败则回退 npm install
   if (hasLock) {
     try {
       log(`📦 npm ci @ ${cwd}`, 'info');
