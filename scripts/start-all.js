@@ -121,6 +121,12 @@ async function initDatabase(baseEnv) {
   const schema = readText(schemaPath);
   const isSQLite = /provider\s*=\s*"sqlite"/i.test(schema);
 
+  // 运行控制开关（Windows/Linux 通用）
+  const yes = (v) => ['1', 'true', 'yes', 'on'].includes(String(v || '').toLowerCase());
+  const skipDbSync = yes(process.env.SKIP_DB_SYNC);   // 跳过 migrate deploy / db push
+  const skipDbSeed = yes(process.env.SKIP_DB_SEED);   // 跳过 db:seed
+  const forceDbSeed = yes(process.env.FORCE_DB_SEED); // 强制执行 db:seed（谨慎使用，会改动数据）
+
   // 计算 SQLite DB 文件是否已存在（首次部署用于是否执行种子）
   let dbFileExisted = false;
   if (isSQLite) {
@@ -137,42 +143,41 @@ async function initDatabase(baseEnv) {
   // 生成 Prisma Client
   await run(npmCmd, ['run', 'db:generate'], { cwd: backendDir, env: baseEnv }, 5 * 60 * 1000);
 
-  // 存在迁移目录则 migrate deploy；否则 db push
-  const migrationsDir = path.join(backendDir, 'prisma', 'migrations');
-  const migrationDirs = fs.existsSync(migrationsDir)
-    ? fs.readdirSync(migrationsDir, { withFileTypes: true }).filter(d => d.isDirectory())
-    : [];
-  const hasMigrations = migrationDirs.length > 0;
-  // 如果只有极少数迁移目录（例如仅有 system_settings 表的那一条），
-  // 则在 deploy 之后追加一次 db push，把剩余模型表结构同步到数据库（首次部署常见）。
-  const needPushAfterDeploy = migrationDirs.length <= 1;
+  // 迁移/结构同步（可通过 SKIP_DB_SYNC 跳过）
+  if (!skipDbSync) {
+    const migrationsDir = path.join(backendDir, 'prisma', 'migrations');
+    const migrationDirs = fs.existsSync(migrationsDir)
+      ? fs.readdirSync(migrationsDir, { withFileTypes: true }).filter(d => d.isDirectory())
+      : [];
+    const hasMigrations = migrationDirs.length > 0;
+    const needPushAfterDeploy = migrationDirs.length <= 1; // 早期项目仅有极少迁移的兜底
 
-  let forceSeed = false;
-  if (hasMigrations) {
-    log('📋 发现迁移目录，执行 prisma migrate deploy', 'info');
-    await run(npmCmd, ['run', 'db:migrate:deploy'], { cwd: backendDir, env: baseEnv }, 10 * 60 * 1000);
-    if (needPushAfterDeploy) {
-      log('🧩 迁移目录不足，追加一次 prisma db push 以补齐表结构', 'warn');
+    if (hasMigrations) {
+      log('📋 发现迁移目录，执行 prisma migrate deploy', 'info');
+      await run(npmCmd, ['run', 'db:migrate:deploy'], { cwd: backendDir, env: baseEnv }, 10 * 60 * 1000);
+      if (needPushAfterDeploy) {
+        log('🧩 迁移目录较少，追加一次 prisma db push 以补齐表结构', 'warn');
+        await run(npmCmd, ['run', 'db:push'], { cwd: backendDir, env: baseEnv }, 10 * 60 * 1000);
+      }
+    } else {
+      log('📋 未发现迁移目录，执行 prisma db push', 'warn');
       await run(npmCmd, ['run', 'db:push'], { cwd: backendDir, env: baseEnv }, 10 * 60 * 1000);
-      // 因为首次 deploy 之前 DB 可能已被创建但未建齐表结构，
-      // 此处补齐后需要强制执行一次种子填充。
-      forceSeed = true;
     }
   } else {
-    log('📋 未发现迁移目录，执行 prisma db push', 'warn');
-    await run(npmCmd, ['run', 'db:push'], { cwd: backendDir, env: baseEnv }, 10 * 60 * 1000);
+    log('⏭️  跳过数据库结构同步（SKIP_DB_SYNC=1）', 'warn');
   }
 
-  // 首次部署（SQLite 且之前不存在 DB 文件）执行种子
-  if ((isSQLite && !dbFileExisted) || forceSeed) {
-    log('🌱 首次部署，执行种子数据', 'info');
-    try {
-      await run(npmCmd, ['run', 'db:seed'], { cwd: backendDir, env: baseEnv }, 5 * 60 * 1000);
-    } catch (e) {
-      log(`⚠️  种子执行失败（忽略）：${e.message}`, 'warn');
-    }
+  // 数据种子执行策略（默认仅首次：SQLite 且 DB 文件不存在）
+  if (skipDbSeed) {
+    log('⏭️  跳过种子数据（SKIP_DB_SEED=1）', 'warn');
+  } else if (forceDbSeed) {
+    log('🌱 强制执行种子数据（FORCE_DB_SEED=1）', 'warn');
+    try { await run(npmCmd, ['run', 'db:seed'], { cwd: backendDir, env: baseEnv }, 5 * 60 * 1000); } catch (e) { log(`⚠️  种子执行失败（忽略）：${e.message}`, 'warn'); }
+  } else if (isSQLite && !dbFileExisted) {
+    log('🌱 首次部署，执行种子数据（检测到新的 SQLite 数据库文件）', 'info');
+    try { await run(npmCmd, ['run', 'db:seed'], { cwd: backendDir, env: baseEnv }, 5 * 60 * 1000); } catch (e) { log(`⚠️  种子执行失败（忽略）：${e.message}`, 'warn'); }
   } else {
-    log('⏭️  跳过种子数据（非首次或非 SQLite）', 'warn');
+    log('⏭️  跳过种子数据（非首次且未强制）', 'warn');
   }
 }
 
