@@ -3,6 +3,10 @@ FROM node:20-bookworm-slim AS builder
 
 WORKDIR /app
 
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
 # 先拷贝依赖清单，利用 Docker 层缓存
 COPY backend/package*.json ./backend/
 COPY frontend/package*.json ./frontend/
@@ -24,6 +28,10 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV PORT=3001
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
 COPY scripts ./scripts
