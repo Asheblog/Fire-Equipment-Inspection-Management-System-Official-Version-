@@ -71,7 +71,9 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
-          platforms: linux/amd64,linux/arm64
+          # 当前依赖链包含 puppeteer（通过 html-pdf-node），arm64 构建阶段会因浏览器二进制不可用失败。
+          # 先固定发布 amd64，保证 CI 可用与部署稳定。
+          platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
