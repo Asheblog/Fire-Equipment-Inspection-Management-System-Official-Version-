@@ -1,9 +1,12 @@
 version: "3.9"
 
 services:
-  app:
+  fire-system:
     image: ${APP_IMAGE:?请设置 APP_IMAGE，例如 ghcr.io/<owner>/<repo>:latest}
     container_name: fire-safety-system
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3001}:3001"
     environment:
       NODE_ENV: production
       PORT: 3001
@@ -11,13 +14,10 @@ services:
       JWT_SECRET: ${JWT_SECRET:?请设置 JWT_SECRET}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?请设置 JWT_REFRESH_SECRET}
       TZ: ${TZ:-Asia/Shanghai}
-    ports:
-      - "${PORT:-3001}:3001"
     volumes:
       - ./storage/data:/app/backend/data
       - ./storage/uploads:/app/backend/uploads
       - ./storage/logs:/app/backend/logs
-    restart: unless-stopped
     healthcheck:
       test:
         [

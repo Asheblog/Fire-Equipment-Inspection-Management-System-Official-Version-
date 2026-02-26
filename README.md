@@ -10,7 +10,7 @@
 - 前端：React + TypeScript + Vite + Tailwind + shadcn/ui；移动端扫码（html5‑qrcode）、可视化（Recharts）。
 - 后端：Node.js + Express；Prisma ORM；JWT 认证（Access/Refresh）。
 - 数据库：默认 SQLite，可通过 `DATABASE_URL` 切换其他数据库。
-- 部署：后端托管前端静态资源，单端口统一访问；支持 Docker Compose 与原生 Node 部署。
+- 部署：后端托管前端静态资源，单端口统一访问；生产镜像由 GitHub Actions 构建并推送，运行侧使用 Docker Compose / 1Panel 拉取镜像部署。
 
 ## 核心功能
 - 移动端扫码点检，支持离线缓存。
@@ -32,24 +32,27 @@
 - 如首次运行失败，可分别在 `frontend/` 与 `backend/` 执行 `npm install` 后再重试。
 
 ## 生产部署（简版）
-- Docker Compose（推荐）
+- 先由 GitHub Actions 构建镜像（文件：`.github/workflows/docker-image.yml`）。
+- 再在服务器（或 1Panel）拉取镜像部署：
   ```bash
-  docker compose up -d --build
-  docker compose logs -f --tail=200
-  docker compose down
+  mkdir -p storage/data storage/uploads storage/logs
+  cp deploy/1panel.env.example .env
+  # 编辑 .env（至少填 APP_IMAGE / JWT_SECRET / JWT_REFRESH_SECRET）
+  docker compose --env-file .env -f deploy/1panel-compose.yml pull
+  docker compose --env-file .env -f deploy/1panel-compose.yml up -d
+  docker compose --env-file .env -f deploy/1panel-compose.yml logs -f --tail=200
   ```
-- 非 Docker（原生）
-  ```bash
-  # 交互式
-  node deploy.js
-  # 或一键脚本
-  npm run deploy
-  ```
-- 重要：请在 `backend/.env` 设置强随机的 `JWT_SECRET` 与 `JWT_REFRESH_SECRET`；默认端口 `3001`，部署后访问 `http://<host>:3001/`。
+- 持久化目录（必须保留）：
+  - `storage/data`（数据库）
+  - `storage/uploads`（图片）
+  - `storage/logs`（日志）
+- 迁移策略：无迁移、直接替换（仅替换镜像，持久化目录不动）。
+- 详细步骤：见 `docs/github-actions-1panel.md`。
 
 ## 项目结构（简版）
 - `backend/`：API、ORM、静态托管
 - `frontend/`：Web 前端
+- `deploy/`：1Panel 编排文件
 - `dev.js`、`deploy.js`、`sync-remote.js`：开发/部署/同步脚本
 - `docker-compose.yml`、`Dockerfile`：容器化部署
 

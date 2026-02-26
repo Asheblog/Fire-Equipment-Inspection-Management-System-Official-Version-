@@ -123,7 +123,7 @@ function init(options = {}) {
     debug: console.debug || console.log
   };
   const rootDir = options.rootDir || path.resolve(__dirname, '../../../');
-  logDir = options.logDir || path.join(rootDir, 'frontend', 'logs');
+  logDir = options.logDir || path.join(rootDir, 'backend', 'logs');
   ensureDir(logDir);
   rotate(getToday());
   patchConsole();

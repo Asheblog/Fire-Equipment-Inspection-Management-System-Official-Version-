@@ -18,10 +18,12 @@ yarn-error.log*
 *.sqlite3
 backend/data/
 backend/prisma/dev.db
+storage/data/
 
 # 上传文件
 backend/uploads/
 uploads/
+storage/uploads/
 
 # 导出文件
 backend/exports/
@@ -31,6 +33,7 @@ exports/
 logs/
 *.log
 backend/logs/
+storage/logs/
 
 # 构建产物
 dist/

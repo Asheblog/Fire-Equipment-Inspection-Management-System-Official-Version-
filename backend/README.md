@@ -67,6 +67,7 @@ backend/
 ├── uploads/                 # 文件上传目录
 │   ├── inspections/         # 点检图片
 │   └── fixes/               # 隐患处理图片
+├── logs/                    # 运行日志目录
 ├── data/                    # SQLite数据库文件
 ├── app.js                   # 应用入口 (已更新)
 ├── test-api.js              # API功能测试
