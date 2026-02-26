@@ -2,6 +2,10 @@
 
 现代化消防安全管理平台，基于 React 19 + Node.js（18+，推荐 20+），前后端集成部署，支持移动端扫码点检与 PC 管理后台。
 
+测试地址：https://fire.asheblog.org
+账号：guest
+密码：Test123!@#
+
 ## 系统截图
 <img width="1920" height="879" alt="image" src="https://github.com/user-attachments/assets/b8cb0603-272b-451d-985d-8ce778149c60" />
 <img width="1920" height="879" alt="image" src="https://github.com/user-attachments/assets/52533d3c-89ce-4460-be69-26d445f300e4" />
